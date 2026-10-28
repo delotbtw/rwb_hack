@@ -1,0 +1,13 @@
+# Провайдер дашбордов: JSON из git (смонтирован в /var/lib/grafana/dashboards) -> папка Capibara.
+apiVersion: 1
+
+providers:
+  - name: capibara
+    orgId: 1
+    folder: Capibara
+    type: file
+    disableDeletion: true        # дашборд живёт в git, из UI не удаляется
+    allowUiUpdates: false        # правки только через git
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,44 @@
+# Надстройка: Grafana для бизнес-аналитиков (K4). docker-compose.yml не меняем:
+#   docker compose -f docker-compose.yml -f docker-compose.bi.yml --profile bi up -d grafana
+# То же делает `make bi`. Остановка: `make bi-stop` (только grafana, проект целиком не трогаем).
+# Порядок: postgres (healthy) -> grafana (http://localhost:3000, anonymous Viewer без логина).
+# Datasource и дашборды подгружаются из git (provisioning), руками в UI ничего настраивать не нужно.
+
+services:
+  grafana:
+    profiles: ["bi"]
+    # тег запинен; плагин PostgreSQL встроен в образ (ASSUMPTION K4: формат provisioning сверен по 11.x)
+    image: grafana/grafana-oss:11.6.0
+    container_name: hack_grafana
+    restart: unless-stopped
+    environment:
+      # Viewer без пароля: аналитик просто открывает страницу; админ нужен только для правки
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # пароль роли app_ro для datasource (пароль = имя роли, K0 §3.3); в pg.yml подставляется как ${GRAFANA_PG_PASSWORD}
+      GRAFANA_PG_PASSWORD: ${GRAFANA_PG_PASSWORD:-app_ro}
+    ports:
+      - "3000:3000"
+    volumes:
+      # datasources, провайдер дашбордов и (позже) алерты; только чтение
+      - ./dashboards/grafana/provisioning:/etc/grafana/provisioning:ro
+      # JSON дашбордов из git; провайдер перечитывает папку сам
+      - ./dashboards/grafana/json:/var/lib/grafana/dashboards:ro
+      # состояние Grafana (алерты, настройки) переживает рестарт
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  grafana_data:

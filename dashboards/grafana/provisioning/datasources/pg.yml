@@ -1,0 +1,23 @@
+# Datasource PostgreSQL под ролью app_ro: SELECT только на mart, statement_timeout=5s, read-only (K0 §3.3).
+# uid фиксирован: на него ссылаются JSON дашбордов и правила алертов.
+# Хост `postgres` — имя сервиса в общей сети compose.
+apiVersion: 1
+
+datasources:
+  - name: Capibara PG
+    uid: capibara-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: app_ro
+    isDefault: true
+    editable: false
+    jsonData:
+      database: marketplace
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+      maxOpenConns: 5
+    secureJsonData:
+      # дефолт app_ro задаёт compose (Grafana не понимает синтаксис ${VAR:-default})
+      password: ${GRAFANA_PG_PASSWORD}

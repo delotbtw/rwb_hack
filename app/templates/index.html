@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capibara: дашборд</title>
+  <style>
+    :root { --bg: #f8fafc; --card: #fff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+    header { padding: 24px 16px 8px; max-width: 1200px; margin: 0 auto; }
+    h1 { margin: 0; font-size: 22px; }
+    .meta { color: var(--muted); font-size: 13px; }
+    main { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 16px;
+           padding: 16px; max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 560px) { main { grid-template-columns: 1fr; } }
+    figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+    figure h2 { margin: 0 0 8px; font-size: 16px; }
+    img { width: 100%; height: auto; display: block; }
+    figcaption { color: var(--muted); margin-top: 8px; font-size: 14px; }
+    .section { max-width: 1200px; margin: 16px auto 0; padding: 0 16px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Capibara: маркетплейс 2016–2018</h1>
+    <div class="meta">Сборка модели: {{ version }} · графиков из mart: {{ charts|length }} · из ноутбука: {{ notebook_charts|length }}</div>
+  </header>
+  {% if charts %}
+  <h3 class="section">Из модели (mart), рисуются по запросу</h3>
+  <main>
+    {% for c in charts %}
+    <figure id="{{ c.id }}">
+      <h2>{{ c.title }}</h2>
+      <img src="/chart/{{ c.id }}.png" alt="{{ c.title }}" loading="lazy">
+      <figcaption>{{ c.caption }}</figcaption>
+    </figure>
+    {% endfor %}
+  </main>
+  {% endif %}
+  {% if notebook_charts %}
+  <h3 class="section">Из ноутбука (EDA)</h3>
+  <main>
+    {% for c in notebook_charts %}
+    <figure id="{{ c.id }}">
+      <h2>{{ c.title }}</h2>
+      <img src="{{ c.src }}" alt="{{ c.title }}" loading="lazy">
+      <figcaption>{{ c.caption }}</figcaption>
+    </figure>
+    {% endfor %}
+  </main>
+  {% endif %}
+  {% if not charts and not notebook_charts %}
+  <main><p>Графиков пока нет: положите ноутбук в notebooks/ и выполните make notebook.</p></main>
+  {% endif %}
+</body>
+</html>

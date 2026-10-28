@@ -1,0 +1,7 @@
+data
+.git
+.idea
+.venv
+**/__pycache__
+docs
+dist

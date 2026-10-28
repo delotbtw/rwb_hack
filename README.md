@@ -96,3 +96,44 @@ http://localhost:8080).
 
 **Загрузка падает на `ModuleNotFoundError: psycopg2`.** Поставьте вручную:
 `pip install psycopg2-binary`
+
+---
+
+## Прототип: сборка модели и графики (`make demo`)
+
+```bash
+make demo        # postgres → raw (если пусто) → stg/core/mart + DQ → http://localhost:8000
+make etl         # пересобрать модель; FORCE_RAW=1 — перезалить raw, DQ_MODE=report — не откатывать
+make reset       # снести базу и собрать всё с нуля
+make help        # все команды
+```
+
+| Что | Где |
+|---|---|
+| SQL-модель, порядок = префиксы `NNN_` | `sql/00_setup … 80_dq/` → `dist/build_model.sql` (одна транзакция) |
+| ETL-раннер (raw → модель → отчёт DQ) | `pipeline/run_etl.py`, `pipeline/bundle.py` |
+| Проверки (упала в strict — сборка откатывается) | `sql/80_dq/810_dq_checks.sql` → `mart.dq_result` |
+| Веб-прототип (PNG по запросу, кэш до новой сборки) | `app/main.py`, графики — `app/charts/*.py` |
+| Docker-надстройка (compose кейса не меняем) | `docker-compose.app.yml`, `docker/python.Dockerfile` |
+
+**Ноутбук → приложение без ручной правки.** Положите `.ipynb` в `notebooks/` (или в корень) и выполните
+`make notebook` (или просто `make demo`). Каждая PNG-картинка из выходов ячеек появится на странице
+в секции «Из ноутбука». Заголовок берётся из ближайшего markdown-заголовка выше, легенда — из первого
+предложения markdown-текста; переопределить можно строками `# title: ...` и `# caption: ...` в ячейке.
+`make notebook EXECUTE=1` перевыполняет копию ноутбука против базы в Docker (`localhost` подменяется
+на `postgres`, пути `data/...` работают от корня); если не выполнился — берутся сохранённые выходы.
+Код ноутбука выгружается в `notebooks/_extracted/<имя>.py` — исходник для переноса логики в SQL.
+Нужна библиотека, которой нет в `requirements.txt`, — допишите её туда.
+
+**Как сделать график «живым» (рисуется из mart по запросу).** Ноутбук читает данные так же, как приложение — только из `mart`:
+
+```python
+from app.db import connect, query_df
+with connect() as conn:
+    df = query_df(conn, "SELECT * FROM mart.v_sales_month")
+```
+
+Затем график оформляется функцией в `app/charts/<тема>.py` по образцу `sales.py`:
+`@chart("id", "Заголовок", "Легенда в одно предложение")`, функция `(conn) -> Figure`,
+без `pyplot`. Новая витрина под график — файл `sql/60_mart/6NN_v_*.sql` (materialized view).
+Чистка данных живёт только в SQL (`sql/20_staging`), не в pandas.

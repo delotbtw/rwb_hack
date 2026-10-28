@@ -1,0 +1,11 @@
+data/
+.idea/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+.env
+app/static/notebook/
+notebooks/_extracted/
+output/

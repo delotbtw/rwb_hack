@@ -1,0 +1,53 @@
+# Надстройка над docker-compose.yml кейса (его не меняем):
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml up -d --build
+# Порядок: postgres (healthy) → etl (raw → модель → DQ, завершается) → app (http://localhost:8000).
+
+x-python: &python
+  build:
+    context: .
+    dockerfile: docker/python.Dockerfile
+  image: capibara-python:dev
+  working_dir: /work
+  volumes:
+    - ./:/work
+  environment:
+    PGHOST: postgres
+    PGPORT: "5432"
+    PGDATABASE: marketplace
+    PGUSER: hack
+    PGPASSWORD: hack
+
+services:
+  etl:
+    <<: *python
+    container_name: hack_etl
+    command: ["python", "-m", "pipeline.run_etl"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: marketplace
+      PGUSER: hack
+      PGPASSWORD: hack
+      FORCE_RAW: ${FORCE_RAW:-0}
+      DQ_MODE: ${DQ_MODE:-strict}
+      EXECUTE: ${EXECUTE:-0}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    <<: *python
+    container_name: hack_app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "app"]
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      etl:
+        condition: service_completed_successfully

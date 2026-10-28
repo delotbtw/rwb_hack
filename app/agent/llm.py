@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+_TIMEOUT_SEC = 30
+# Thinking mode is off by default: faster, cheaper, and tool calls need no reasoning_content round-trip.
+_DEFAULT_REASONING_EFFORT = "none"
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,8 @@ def get_client(settings: LLMSettings | None = None) -> OpenAI:
         api_key=settings.api_key,
         base_url=settings.base_url,
         project=settings.folder_id,
+        timeout=_TIMEOUT_SEC,
+        max_retries=0,
     )
 
 
@@ -70,6 +75,7 @@ def chat(
     client = client or get_client(settings)
     if tools:
         kwargs["tools"] = tools
+    kwargs.setdefault("reasoning_effort", _DEFAULT_REASONING_EFFORT)
     return client.chat.completions.create(
         model=settings.model_uri,
         messages=messages,

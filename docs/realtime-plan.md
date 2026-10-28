@@ -229,15 +229,15 @@ Grafana — промышленный стандарт, команда её зн�
    | Параметр | Значение | Источник |
    |---|---|---|
    | Endpoint (OpenAI-совместимый) | `https://ai.api.cloud.yandex.net/v1` | Yandex Cloud docs |
-   | Модель | URI `gpt://<folder_id>/deepseek-v4-flash` | Yandex Cloud docs (пример LiteLLM) |
+   | Модель | URI `gpt://<folder_id>/deepseek-v4.1-flash` | Yandex Cloud docs (пример LiteLLM) |
    | Аутентификация | API-ключ сервисного аккаунта, в переменной **без** префиксов `Bearer`/`Api-Key`; `folder_id` передаётся в `project` клиента | Yandex Cloud docs |
    | Клиент | `openai` SDK: `OpenAI(api_key=…, base_url=…, project=folder_id)`, `chat.completions.create(model=URI, tools=…)` | Yandex Cloud docs |
    | Function calling | у DeepSeek поддерживается (`tools`, тип `function`, имя `[a-zA-Z0-9_-]{≤128}`); через Yandex endpoint в документации показан на YandexGPT | DeepSeek docs / Yandex docs |
    | Режим thinking | у DeepSeek V4 включён по умолчанию; при вызове инструментов в этом режиме `reasoning_content` надо возвращать в историю сообщений | DeepSeek docs |
 
-   **«DeepSeek 4.1» в документации нет.** Актуальное семейство — V4: в оригинальном API это `deepseek-flash` и `deepseek-v4-pro`, в Yandex AI Studio подтверждён `deepseek-v4-flash`. Берём **`deepseek-v4-flash`**; есть ли в AI Studio `deepseek-v4-pro`, проверить в консоли (ASSUMPTION-R5).
+   **Модель — `deepseek-v4.1-flash`** (проверено живым запросом команды и smoke-тестом 2026-10-28; в документации Yandex пример с `deepseek-v4-flash`). Режим рассуждений выключаем по умолчанию: `reasoning_effort="none"` — быстрее, дешевле и не нужно возвращать `reasoning_content` при вызове инструментов. Клиент: `timeout=30`, `max_retries=0`.
 
-   Конфиг в `.env` (ключ не в git): `LLM_BASE_URL`, `YANDEX_AI_STUDIO_API_KEY`, `YANDEX_FOLDER_ID`, `LLM_MODEL=deepseek-v4-flash`. Провайдер скрыт за адаптером `app/agent/llm.py`: переход на оригинальный DeepSeek API или YandexGPT = смена трёх переменных.
+   Конфиг в `.env` (ключ не в git): `LLM_BASE_URL`, `YANDEX_AI_STUDIO_API_KEY`, `YANDEX_FOLDER_ID`, `LLM_MODEL=deepseek-v4.1-flash`. Провайдер скрыт за адаптером `app/agent/llm.py`: переход на оригинальный DeepSeek API или YandexGPT = смена трёх переменных.
 
    **Smoke-тест в R0** (`tests/agent/test_llm_smoke.py`, пропускается без ключа): один запрос с одним инструментом через Yandex endpoint → модель вернула `tool_calls` с валидным JSON. Проверяем и то, что Yandex пропускает параметр `thinking`/`reasoning_effort`; если нет — работаем без thinking.
 3. Инструменты:
@@ -290,12 +290,12 @@ Grafana — промышленный стандарт, команда её зн�
 
 ## 12. Решения и допущения
 
-Приняты: R1 Redpanda · R2 Airflow · R3 Streamlit + Plotly · R4 агент только через семантические tools · R5 демо-реплей: история до 2018-08-01 batch-ом + хвост потоком за ~60 с (§1.1) · R6 Grafana для аналитиков · R7 вариант A (одна транзакция, пауза потока) · LLM `deepseek-v4-flash` через Yandex AI Studio.
+Приняты: R1 Redpanda · R2 Airflow · R3 Streamlit + Plotly · R4 агент только через семантические tools · R5 демо-реплей: история до 2018-08-01 batch-ом + хвост потоком за ~60 с (§1.1) · R6 Grafana для аналитиков · R7 вариант A (одна транзакция, пауза потока) · LLM `deepseek-v4.1-flash` через Yandex AI Studio.
 
 Открыты:
 - **ASSUMPTION-R1:** на площадке есть интернет, у сервисного аккаунта есть API-ключ и доступ к AI Studio в каталоге `YANDEX_FOLDER_ID`.
 - **ASSUMPTION-R2:** Docker Desktop может получить ≥ 6 ГБ RAM.
 - **ASSUMPTION-R3:** API Streamlit (`fragment`, `on_select`) — проверить в R0.
 - **ASSUMPTION-R4:** в Grafana OSS нет рассылки PDF-отчётов по расписанию — проверить в R0.
-- **ASSUMPTION-R5:** `deepseek-v4-flash` в AI Studio отвечает с `tool_calls`; наличие `deepseek-v4-pro` — проверить в консоли (smoke-тест R0).
+- **ASSUMPTION-R5:** закрыто — `deepseek-v4.1-flash` отвечает с `tool_calls` (smoke K0).
 - `dashboards.md` уже выбирает Grafana; `architecture.md` DECISION-3 (суррогатные ключи) теперь противоречит §4.2 — поправить при старте R0.

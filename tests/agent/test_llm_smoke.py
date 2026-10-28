@@ -44,7 +44,7 @@ def settings() -> LLMSettings:
 
 
 def test_build_model_uri_offline():
-    assert build_model_uri("b1gabc", "deepseek-v4-flash") == "gpt://b1gabc/deepseek-v4-flash"
+    assert build_model_uri("b1gabc", "deepseek-v4.1-flash") == "gpt://b1gabc/deepseek-v4.1-flash"
 
 
 def test_settings_repr_hides_key():
@@ -65,7 +65,7 @@ def test_tool_call_returns_valid_json(settings):
 @pytest.mark.parametrize(
     "label, extra",
     [
-        ("reasoning_effort", {"reasoning_effort": "low"}),
+        ("reasoning_effort_low", {"reasoning_effort": "low"}),
         ("thinking", {"extra_body": {"thinking": {"type": "disabled"}}}),
     ],
 )

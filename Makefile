@@ -4,7 +4,7 @@ URL     := http://localhost:8000
 .PHONY: demo up etl notebook app bundle logs ps down reset help
 
 help:  ## список команд
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
+	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
 
 demo:  ## всё одной командой: база → raw → модель → DQ → приложение
 	$(COMPOSE) up -d --build app

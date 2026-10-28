@@ -30,6 +30,7 @@ services:
       PGPASSWORD: hack
       FORCE_RAW: ${FORCE_RAW:-0}
       DQ_MODE: ${DQ_MODE:-strict}
+      CUTOFF: ${CUTOFF:-}
       EXECUTE: ${EXECUTE:-0}
     restart: "no"
     depends_on:

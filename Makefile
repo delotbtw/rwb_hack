@@ -37,7 +37,7 @@ ps:
 	$(COMPOSE) ps -a
 
 down:  ## остановить всё (данные сохраняются)
-	$(COMPOSE) down
+	docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.realtime.yml -f docker-compose.bi.yml --profile realtime --profile bi down
 
 reset:  ## снести базу с данными и собрать всё заново
 	$(COMPOSE) down -v

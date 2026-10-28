@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, StrictInt, StrictStr, model_validator
@@ -219,3 +220,15 @@ class ErrorResponse(BaseModel):
     error: str
     allowed: list[str] = Field(default_factory=list)
     detail: str | None = None
+
+
+class LiveOrder(BaseModel):
+    order_id: str
+    purchased_at: datetime | None
+    order_status: str | None
+    customer_state: str | None
+    order_value: Decimal | None
+
+
+class LiveOrdersResponse(BaseModel):
+    orders: list[LiveOrder]

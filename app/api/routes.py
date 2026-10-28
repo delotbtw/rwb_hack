@@ -15,6 +15,8 @@ from app.api.schemas import (
     EXPORT_DEFAULT_LIMIT,
     DimensionInfo,
     MetricInfo,
+    LiveOrder,
+    LiveOrdersResponse,
     MetricsResponse,
     QueryRequest,
     QueryResponse,
@@ -101,3 +103,23 @@ def get_export_csv(
             "X-Truncated": "true" if result.truncated else "false",
         },
     )
+
+
+@router.get("/live/orders", response_model=LiveOrdersResponse)
+def get_live_orders(limit: int = Query(default=20, ge=1, le=100)) -> LiveOrdersResponse:
+    with connect_ro() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """SELECT order_id, purchased_at, order_status, customer_state, order_value
+               FROM mart.order_summary
+               ORDER BY purchased_at DESC NULLS LAST, order_id
+               LIMIT %s""",
+            (min(limit, 20),),
+        )
+        orders = [
+            LiveOrder(
+                order_id=row[0], purchased_at=row[1], order_status=row[2],
+                customer_state=row[3], order_value=row[4],
+            )
+            for row in cursor.fetchall()
+        ]
+    return LiveOrdersResponse(orders=orders)

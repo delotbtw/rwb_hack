@@ -53,3 +53,26 @@ services:
     depends_on:
       etl:
         condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    image: capibara-web:dev
+    working_dir: /work
+    volumes:
+      - ./web:/work/web:ro
+    environment:
+      API_BASE_URL: http://app:8000
+    command: ["streamlit", "run", "web/app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      app:
+        condition: service_healthy

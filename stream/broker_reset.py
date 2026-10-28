@@ -35,14 +35,22 @@ def delete_topics(admin) -> None:
 
 
 def delete_group(admin) -> None:
-    for name, future in admin.delete_consumer_groups([CONSUMER_GROUP]).items():
+    deadline = time.monotonic() + WAIT_SECONDS * 2
+    while True:
+        future = admin.delete_consumer_groups([CONSUMER_GROUP])[CONSUMER_GROUP]
         try:
             future.result()
-            log.info("group %s deleted", name)
+            log.info("group %s deleted", CONSUMER_GROUP)
+            return
         except Exception as exc:
-            if _code(exc) != KafkaError.GROUP_ID_NOT_FOUND:
+            code = _code(exc)
+            if code == KafkaError.GROUP_ID_NOT_FOUND:
+                log.info("group %s absent", CONSUMER_GROUP)
+                return
+            if code != KafkaError.NON_EMPTY_GROUP or time.monotonic() > deadline:
                 raise
-            log.info("group %s absent", name)
+            log.info("group %s still has members, waiting for session timeout", CONSUMER_GROUP)
+            time.sleep(3)
 
 
 def wait_topics_gone(admin) -> None:

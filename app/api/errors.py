@@ -10,7 +10,7 @@ import psycopg2
 import psycopg2.errors
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import ValidationError
 
 from app.api.schemas import ErrorResponse
@@ -87,6 +87,10 @@ def invalid_request_from(exc: ValidationError | RequestValidationError) -> ApiEr
     return ApiError.invalid_request(_validation_detail(exc.errors()))
 
 
+def _is_api(request: Request) -> bool:
+    return request.url.path.startswith("/api")
+
+
 def _response(err: ApiError) -> JSONResponse:
     body = ErrorResponse(error=err.error, allowed=err.allowed, detail=err.detail)
     return JSONResponse(status_code=err.status_code, content=body.model_dump(exclude_none=True))
@@ -106,11 +110,15 @@ async def _timeout_handler(request: Request, exc: psycopg2.errors.QueryCanceled)
 
 
 async def _db_unavailable_handler(request: Request, exc: psycopg2.OperationalError) -> JSONResponse:
+    if not _is_api(request):
+        raise exc  # старые ручки: поведение по умолчанию
     log.error("database unavailable on %s: %s", request.url.path, exc)
     return _response(ApiError.db_unavailable())
 
 
-async def _internal_handler(request: Request, exc: Exception) -> JSONResponse:
+async def _internal_handler(request: Request, exc: Exception) -> Response:
+    if not _is_api(request):
+        return PlainTextResponse("Internal Server Error", status_code=500)  # как у ServerErrorMiddleware
     log.error("unhandled error on %s", request.url.path, exc_info=exc)
     return _response(ApiError.internal())
 

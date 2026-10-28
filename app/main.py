@@ -25,6 +25,8 @@ from fastapi.templating import Jinja2Templates  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import app.charts  # noqa: E402,F401  регистрирует все графики
+from app.api import router as api_router  # noqa: E402
+from app.api.errors import register_handlers  # noqa: E402
 from app.db import build_version, connect, query_df  # noqa: E402
 from app.registry import REGISTRY, by_section  # noqa: E402
 
@@ -36,6 +38,8 @@ STATIC.mkdir(exist_ok=True)
 app = FastAPI(title="Capibara: прототип дашборда")
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
+app.include_router(api_router)
+register_handlers(app)
 
 
 def notebook_charts() -> list[dict]:

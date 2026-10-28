@@ -12,3 +12,8 @@ numpy==2.1.3
 seaborn==0.13.2
 scipy==1.14.1
 sqlalchemy==2.0.36
+# LLM-агент (K0-T4) и контракты
+openai==3.40.0
+python-dotenv==1.2.4
+jsonschema==4.26.0
+pytest==9.2.0

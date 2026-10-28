@@ -161,6 +161,48 @@ COMMENT ON TABLE ops.stream_status IS 'Состояние потока (одна
 COMMENT ON TABLE ops.reconcile_result IS 'Сверка batch vs stream; diff = batch - stream';
 -- <<< sql/05_landing/055_ops_tables.sql
 
+-- >>> sql/05_landing/056_ops_stream_pause.sql
+-- object : ops.stream_pause
+-- grain  : 1 строка (id=1) = флаг паузы потока на время сборки
+-- source : -
+-- cc     : K3 §3.3, K0 §4.3
+-- why    : пауза живёт дольше одного процесса задачи Airflow, поэтому это таблица, а не advisory lock;
+--          ETL ставит run_id, ingestor первым в транзакции батча берёт SELECT ... FOR SHARE и при паузе откатывается;
+--          IF NOT EXISTS, сид ON CONFLICT DO NOTHING — состояние переживает пересборку
+
+CREATE TABLE IF NOT EXISTS ops.stream_pause (
+    id        smallint PRIMARY KEY CHECK (id = 1),
+    run_id    bigint,
+    paused_at timestamp
+);
+
+INSERT INTO ops.stream_pause (id, run_id, paused_at) VALUES (1, NULL, NULL)
+ON CONFLICT DO NOTHING;
+
+COMMENT ON TABLE ops.stream_pause IS 'Пауза потока на время сборки; run_id IS NULL = потока ничто не держит (одна строка)';
+-- <<< sql/05_landing/056_ops_stream_pause.sql
+
+-- >>> sql/05_landing/057_replay_runs.sql
+-- object : ops.replay_runs
+-- grain  : 1 строка = 1 проигрывание датасета в поток (replay_id из события replay.completed)
+-- source : -
+-- cc     : K2 §5 (replay.completed), K2 §6 п.3, ASSUMPTION-K2-1
+-- why    : ingestor фиксирует итоги реплея и момент догона (caught_up_at); «Контроль» и /api/status сверяют модель с expected;
+--          IF NOT EXISTS: состояние переживает пересборку
+
+CREATE TABLE IF NOT EXISTS ops.replay_runs (
+    replay_id    uuid PRIMARY KEY,
+    cutoff       date,
+    events_total bigint,
+    orders_total bigint,
+    expected     jsonb NOT NULL,
+    received_at  timestamp NOT NULL,
+    caught_up_at timestamp
+);
+
+COMMENT ON TABLE ops.replay_runs IS 'Проигрывания датасета: итоги генератора (expected) и момент догона ingestor-ом';
+-- <<< sql/05_landing/057_replay_runs.sql
+
 -- >>> sql/10_seed/110_dim_order_status.sql
 -- object : core.dim_order_status
 -- grain  : 1 строка = 1 статус заказа
@@ -191,20 +233,27 @@ INSERT INTO core.dim_order_status (order_status, is_revenue, is_final, descripti
 -- object : stg.orders
 -- grain  : 1 строка = 1 строка raw.orders
 -- source : raw.orders
--- cc     : пустые строки → NULL; статус приведён к нижнему регистру
+-- cc     : пустые строки → NULL; статус приведён к нижнему регистру;
+--          cutoff (ops.build_params): при заданном cutoff только заказы с purchased_at < cutoff (K0 §4.5, K3 §3.1)
 -- why    : типы приводятся в одном месте, остальные слои читают только stg
 
 CREATE VIEW stg.orders AS
-SELECT
-    NULLIF(TRIM(order_id), '')                                    AS order_id,
-    NULLIF(TRIM(customer_id), '')                                 AS customer_id,
-    LOWER(NULLIF(TRIM(order_status), ''))                         AS order_status,
-    NULLIF(TRIM(order_purchase_timestamp), '')::timestamp         AS purchased_at,
-    NULLIF(TRIM(order_approved_at), '')::timestamp                AS approved_at,
-    NULLIF(TRIM(order_delivered_carrier_date), '')::timestamp     AS delivered_carrier_at,
-    NULLIF(TRIM(order_delivered_customer_date), '')::timestamp    AS delivered_customer_at,
-    NULLIF(TRIM(order_estimated_delivery_date), '')::timestamp    AS estimated_delivery_at
-FROM raw.orders;
+WITH typed AS (
+    SELECT
+        NULLIF(TRIM(order_id), '')                                    AS order_id,
+        NULLIF(TRIM(customer_id), '')                                 AS customer_id,
+        LOWER(NULLIF(TRIM(order_status), ''))                         AS order_status,
+        NULLIF(TRIM(order_purchase_timestamp), '')::timestamp         AS purchased_at,
+        NULLIF(TRIM(order_approved_at), '')::timestamp                AS approved_at,
+        NULLIF(TRIM(order_delivered_carrier_date), '')::timestamp     AS delivered_carrier_at,
+        NULLIF(TRIM(order_delivered_customer_date), '')::timestamp    AS delivered_customer_at,
+        NULLIF(TRIM(order_estimated_delivery_date), '')::timestamp    AS estimated_delivery_at
+    FROM raw.orders
+)
+
+SELECT * FROM typed
+WHERE (SELECT cutoff FROM ops.build_params WHERE id = 1) IS NULL
+   OR purchased_at < (SELECT cutoff FROM ops.build_params WHERE id = 1);
 -- <<< sql/20_staging/200_stg_orders.sql
 
 -- >>> sql/20_staging/210_stg_order_items.sql
@@ -212,6 +261,7 @@ FROM raw.orders;
 -- grain  : 1 строка = 1 строка raw.order_items
 -- source : raw.order_items
 -- cc     : CC-09 (order_item_id — порядковый номер внутри заказа, не id)
+--          cutoff: при заданном cutoff только позиции заказов из stg.orders (K3 §3.1)
 -- why    : деньги в numeric(12,2), номер позиции в int
 
 CREATE VIEW stg.order_items AS
@@ -223,7 +273,9 @@ SELECT
     NULLIF(TRIM(shipping_limit_date), '')::timestamp      AS shipping_limit_at,
     NULLIF(TRIM(price), '')::numeric(12, 2)               AS price,
     NULLIF(TRIM(freight_value), '')::numeric(12, 2)       AS freight_value
-FROM raw.order_items;
+FROM raw.order_items AS i
+WHERE (SELECT cutoff FROM ops.build_params WHERE id = 1) IS NULL
+   OR EXISTS (SELECT 1 FROM stg.orders AS o WHERE o.order_id = NULLIF(TRIM(i.order_id), ''));
 -- <<< sql/20_staging/210_stg_order_items.sql
 
 -- >>> sql/20_staging/220_stg_order_payments.sql
@@ -231,6 +283,7 @@ FROM raw.order_items;
 -- grain  : 1 строка = 1 платёжная запись заказа
 -- source : raw.order_payments
 -- cc     : installments = 0 сохраняется как есть (не подменяем на 1); payment_value не умножается на installments
+--          cutoff: при заданном cutoff только позиции заказов из stg.orders (K3 §3.1)
 -- why    : деньги в numeric(12,2), номера и рассрочка в int
 
 CREATE VIEW stg.order_payments AS
@@ -240,7 +293,9 @@ SELECT
     LOWER(NULLIF(TRIM(payment_type), ''))             AS payment_type,
     NULLIF(TRIM(payment_installments), '')::int       AS payment_installments,
     NULLIF(TRIM(payment_value), '')::numeric(12, 2)   AS payment_value
-FROM raw.order_payments;
+FROM raw.order_payments AS p
+WHERE (SELECT cutoff FROM ops.build_params WHERE id = 1) IS NULL
+   OR EXISTS (SELECT 1 FROM stg.orders AS o WHERE o.order_id = NULLIF(TRIM(p.order_id), ''));
 -- <<< sql/20_staging/220_stg_order_payments.sql
 
 -- >>> sql/20_staging/230_stg_order_reviews.sql
@@ -248,6 +303,7 @@ FROM raw.order_payments;
 -- grain  : 1 строка = 1 связь отзыва с заказом; ключ (review_id, order_id)
 -- source : raw.order_reviews
 -- cc     : review_id не уникален сам по себе, у 547 заказов несколько отзывов — DISTINCT не делаем
+--          cutoff: при заданном cutoff только позиции заказов из stg.orders (K3 §3.1)
 -- why    : оценка в int, пустой текст отзыва — NULL, а не пустая строка
 
 CREATE VIEW stg.order_reviews AS
@@ -259,7 +315,9 @@ SELECT
     NULLIF(TRIM(review_comment_message), '')              AS review_comment_message,
     NULLIF(TRIM(review_creation_date), '')::timestamp     AS review_created_at,
     NULLIF(TRIM(review_answer_timestamp), '')::timestamp  AS review_answered_at
-FROM raw.order_reviews;
+FROM raw.order_reviews AS r
+WHERE (SELECT cutoff FROM ops.build_params WHERE id = 1) IS NULL
+   OR EXISTS (SELECT 1 FROM stg.orders AS o WHERE o.order_id = NULLIF(TRIM(r.order_id), ''));
 -- <<< sql/20_staging/230_stg_order_reviews.sql
 
 -- >>> sql/20_staging/240_stg_products.sql
@@ -355,11 +413,12 @@ CREATE INDEX ON core.dim_customer (customer_unique_id);
 -- object : core.dim_seller
 -- grain  : 1 строка = 1 продавец; PK seller_id
 -- source : stg.sellers
--- cc     : -
+-- cc     : is_inferred=false: заглушки продавцов из потока (K2) помечаются true
 -- why    : география продавца нужна для Q2 (город, штат) и срезов доставки
 
 CREATE TABLE core.dim_seller AS
-SELECT seller_id, zip_prefix, city, state, city_normalized, state_normalized
+SELECT seller_id, zip_prefix, city, state, city_normalized, state_normalized,
+       false AS is_inferred
 FROM stg.sellers;
 
 ALTER TABLE core.dim_seller ADD PRIMARY KEY (seller_id);
@@ -397,7 +456,7 @@ ALTER TABLE core.dim_category ADD PRIMARY KEY (category_key);
 -- object : core.dim_product
 -- grain  : 1 строка = 1 товар; PK product_id
 -- source : stg.products, core.dim_category
--- cc     : пустая категория → '__unknown__' + флаг is_missing_category; габариты nullable
+-- cc     : пустая категория → '__unknown__' + флаг is_missing_category; габариты nullable; is_inferred=false (заглушки из потока = true)
 -- why    : категория — FK на справочник, исходное название сохраняется для прозрачности
 
 CREATE TABLE core.dim_product AS
@@ -407,7 +466,8 @@ SELECT
     category_name,
     category_name IS NULL AS is_missing_category,
     name_length, description_length, photos_qty,
-    weight_g, length_cm, height_cm, width_cm
+    weight_g, length_cm, height_cm, width_cm,
+    false AS is_inferred
 FROM stg.products;
 
 ALTER TABLE core.dim_product ADD PRIMARY KEY (product_id);
@@ -514,9 +574,9 @@ ALTER TABLE core.fact_order_review
 -- grain  : 1 строка = 1 календарный месяц 2016-09..2018-10 (включая месяцы без заказов)
 -- source : core.fact_order, core.fact_order_item, core.dim_order_status
 -- cc     : FR-30 (выручка = SUM(price) по is_revenue, без freight, месяц по purchase); пустой месяц 2016-11
--- why    : материализовано — графики читают за доли миллисекунды
+-- why    : обычный view: поток (ingestor) обновляет core, REFRESH не нужен; Q1-Q5 видят события сразу
 
-CREATE MATERIALIZED VIEW mart.v_sales_month AS
+CREATE VIEW mart.v_sales_month AS
 WITH calendar AS (
     SELECT generate_series(DATE '2016-09-01', DATE '2018-10-01', INTERVAL '1 month')::date AS month
 ),
@@ -536,7 +596,7 @@ LEFT JOIN revenue_items r ON r.month = c.month
 GROUP BY c.month
 ORDER BY c.month;
 
-COMMENT ON MATERIALIZED VIEW mart.v_sales_month IS
+COMMENT ON VIEW mart.v_sales_month IS
     'Выручка (SUM price, delivered) и число заказов по месяцу оформления; месяцы без заказов = 0';
 -- <<< sql/60_mart/600_v_sales_month.sql
 
@@ -581,7 +641,7 @@ COMMENT ON VIEW mart.v_sales_item IS 'Позиция заказа: выручк�
 -- cc     : 775 заказов без позиций, 1 без оплаты, 639 с расхождением оплаты; 8 delivered без даты вручения
 -- why    : каждый поток сначала агрегируется до заказа отдельно — без fan-out (2 товара × 2 оплаты ≠ 4 строки)
 
-CREATE MATERIALIZED VIEW mart.order_summary AS
+CREATE VIEW mart.order_summary AS
 WITH items AS (
     SELECT order_id,
            COUNT(*)                   AS line_count,
@@ -647,8 +707,7 @@ SELECT
         AND b.delivered_customer_at >= b.purchased_at)                   AS is_valid_delivery
 FROM base b;
 
-CREATE UNIQUE INDEX ON mart.order_summary (order_id);
-COMMENT ON MATERIALIZED VIEW mart.order_summary IS
+COMMENT ON VIEW mart.order_summary IS
     'Один заказ: суммы позиций/оплат/отзывов, сверка оплаты, срок и опоздание доставки';
 -- <<< sql/60_mart/610_order_summary.sql
 
@@ -659,7 +718,7 @@ COMMENT ON MATERIALIZED VIEW mart.order_summary IS
 -- cc     : FR-30 выручка = SUM(price) по is_revenue; выручка продавца — только его позиции, не весь чек
 -- why    : гранула позиции: заказ с товарами разных продавцов делится между ними корректно
 
-CREATE MATERIALIZED VIEW mart.v_seller_sales AS
+CREATE VIEW mart.v_seller_sales AS
 SELECT
     i.seller_id,
     s.city,
@@ -673,7 +732,7 @@ JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_reve
 LEFT JOIN core.dim_seller s   ON s.seller_id = i.seller_id
 GROUP BY i.seller_id, s.city, s.state;
 
-CREATE MATERIALIZED VIEW mart.v_category_sales AS
+CREATE VIEW mart.v_category_sales AS
 SELECT
     c.category_key,
     c.label,
@@ -687,8 +746,8 @@ LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
 LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
 GROUP BY c.category_key, c.label, c.is_unknown;
 
-COMMENT ON MATERIALIZED VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';
-COMMENT ON MATERIALIZED VIEW mart.v_category_sales IS 'Выручка и доля категории; unknown — отдельная строка, сумма = общей выручке';
+COMMENT ON VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';
+COMMENT ON VIEW mart.v_category_sales IS 'Выручка и доля категории; unknown — отдельная строка, сумма = общей выручке';
 -- <<< sql/60_mart/620_sales_marts.sql
 
 -- >>> sql/60_mart/630_delivery_marts.sql
@@ -894,6 +953,259 @@ CREATE VIEW mart.stream_status AS SELECT * FROM ops.stream_status;
 CREATE VIEW mart.reconcile_result AS SELECT * FROM ops.reconcile_result;
 -- <<< sql/60_mart/660_ops_views.sql
 
+-- >>> sql/60_mart/665_replay_view.sql
+-- object : mart.replay_runs
+-- grain  : как у ops.replay_runs
+-- source : ops.replay_runs
+-- cc     : K2 §6 п.3
+-- why    : API (/api/status, «Контроль») читает только mart под app_ro; view даёт доступ к итогам реплея без прав на ops
+
+CREATE VIEW mart.replay_runs AS SELECT * FROM ops.replay_runs;
+-- <<< sql/60_mart/665_replay_view.sql
+
+-- >>> sql/60_mart/670_v_payment.sql
+-- object : mart.v_payment
+-- grain  : 1 строка = 1 платёж заказа (order_id, payment_sequential), все статусы заказа
+-- source : core.fact_order_payment, mart.order_summary
+-- cc     : 1 заказ без оплаты не попадает в витрину (нет платежа); значения оплаты как в core, расхождение с позициями не правим
+-- why    : срез способов оплаты для D1 без JOIN фактов в панелях: платёж ровно один раз, срезы заказа берутся из order_summary
+
+CREATE VIEW mart.v_payment AS
+SELECT
+    p.order_id,
+    p.payment_sequential,
+    o.purchase_month,
+    o.customer_state,
+    p.payment_type,
+    p.payment_installments  AS installments,
+    p.payment_value,
+    COALESCE(o.is_revenue, FALSE) AS is_revenue
+FROM core.fact_order_payment p
+LEFT JOIN mart.order_summary o ON o.order_id = p.order_id;
+
+COMMENT ON VIEW mart.v_payment IS 'Платёж заказа: способ, рассрочка, сумма и срезы месяц/штат покупателя/is_revenue';
+-- <<< sql/60_mart/670_v_payment.sql
+
+-- >>> sql/60_mart/671_v_delivery.sql
+-- object : mart.v_delivery
+-- grain  : 1 строка = 1 заказ со статусом delivered; PK order_id
+-- source : mart.order_summary, core.fact_order_item, core.dim_seller, core.dim_product, core.dim_category
+-- cc     : 8 delivered без даты вручения и невалидные даты: has_valid_dates = FALSE, флаги и late_bucket = NULL; доставка и опоздание не пересчитываются
+-- why    : основной продавец и категория заказа (по наибольшей сумме price, при равенстве по id/названию) дают срез D2 без JOIN фактов в панелях
+
+CREATE VIEW mart.v_delivery AS
+WITH seller_pick AS (
+    SELECT DISTINCT ON (order_id) order_id, seller_state
+    FROM (
+        SELECT i.order_id, i.seller_id, s.state_normalized AS seller_state, SUM(i.price) AS price_sum
+        FROM core.fact_order_item i
+        LEFT JOIN core.dim_seller s ON s.seller_id = i.seller_id
+        GROUP BY i.order_id, i.seller_id, s.state_normalized
+    ) t
+    ORDER BY order_id, price_sum DESC NULLS LAST, seller_id
+),
+category_pick AS (
+    SELECT DISTINCT ON (order_id) order_id, category_label
+    FROM (
+        SELECT i.order_id, c.label AS category_label, SUM(i.price) AS price_sum
+        FROM core.fact_order_item i
+        LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
+        LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
+        GROUP BY i.order_id, c.label
+    ) t
+    ORDER BY order_id, price_sum DESC NULLS LAST, category_label
+)
+SELECT
+    o.order_id,
+    o.purchase_month,
+    o.customer_state,
+    sp.seller_state                                  AS seller_state_main,
+    cp.category_label                                AS category_main,
+    o.delivery_days,
+    o.delay_days,
+    CASE WHEN o.is_valid_delivery THEN o.delay_days <= 0 END AS is_on_time,
+    CASE WHEN o.is_valid_delivery THEN o.delay_days > 0 END  AS is_late,
+    o.is_valid_delivery                              AS has_valid_dates,
+    o.review_score_mean,
+    CASE
+        WHEN NOT o.is_valid_delivery THEN NULL
+        WHEN o.delay_days <= 0       THEN 'on_time'
+        WHEN o.delay_days <= 3       THEN '1-3'
+        WHEN o.delay_days <= 7       THEN '4-7'
+        ELSE '8+'
+    END                                              AS late_bucket
+FROM mart.order_summary o
+LEFT JOIN seller_pick   sp ON sp.order_id = o.order_id
+LEFT JOIN category_pick cp ON cp.order_id = o.order_id
+WHERE o.order_status = 'delivered';
+
+COMMENT ON VIEW mart.v_delivery IS 'Delivered-заказ: срок и опоздание из order_summary, основной продавец/категория, корзина опоздания';
+-- <<< sql/60_mart/671_v_delivery.sql
+
+-- >>> sql/60_mart/672_v_delivery_item.sql
+-- object : mart.v_delivery_item
+-- grain  : 1 строка = 1 позиция delivered-заказа (order_id, order_item_id)
+-- source : core.fact_order_item, core.fact_order, core.dim_seller, mart.order_summary
+-- cc     : is_shipped_late = передача перевозчику позже shipping_limit; NULL, если одной из дат нет; даты как в core
+-- why    : срез по продавцу для D2 на грануле позиции без JOIN фактов в панелях; оценка и штат покупателя берутся из order_summary
+
+CREATE VIEW mart.v_delivery_item AS
+SELECT
+    i.order_id,
+    i.order_item_id,
+    os.purchase_month,
+    i.seller_id,
+    s.state_normalized                                          AS seller_state,
+    os.customer_state,
+    o.delivered_carrier_at > i.shipping_limit_at                AS is_shipped_late,
+    EXTRACT(EPOCH FROM o.delivered_carrier_at - i.shipping_limit_at) / 86400 AS ship_delay_days,
+    os.review_score_mean
+FROM core.fact_order_item i
+LEFT JOIN core.fact_order o     ON o.order_id = i.order_id
+LEFT JOIN core.dim_seller s     ON s.seller_id = i.seller_id
+LEFT JOIN mart.order_summary os ON os.order_id = i.order_id
+WHERE o.order_status = 'delivered';
+
+COMMENT ON VIEW mart.v_delivery_item IS 'Позиция delivered-заказа: опоздание передачи перевозчику относительно shipping_limit, срезы продавец/штат';
+-- <<< sql/60_mart/672_v_delivery_item.sql
+
+-- >>> sql/60_mart/673_v_customer.sql
+-- object : mart.v_customer
+-- grain  : 1 строка = 1 покупатель (customer_unique_id), все статусы заказов; ключ customer_unique_id
+-- source : mart.order_summary, mart.v_sales_item
+-- cc     : покупатель = customer_unique_id; выручка = Σ goods_value по is_revenue (без freight); first_category = категория первой позиции первого заказа
+-- why    : гранула покупателя для D3 (доля вернувшихся, выручка и заказы на покупателя) без пересчёта в панелях; orders_count совпадает с customers в mart.v_kpi
+
+CREATE VIEW mart.v_customer AS
+WITH order_category AS (
+    SELECT DISTINCT ON (order_id) order_id, category_label
+    FROM mart.v_sales_item
+    ORDER BY order_id, order_item_id
+),
+orders AS (
+    SELECT
+        os.customer_unique_id,
+        os.customer_state,
+        os.purchase_month,
+        os.is_revenue,
+        os.goods_value,
+        oc.category_label,
+        ROW_NUMBER() OVER (PARTITION BY os.customer_unique_id ORDER BY os.purchased_at, os.order_id)           AS seq_first,
+        ROW_NUMBER() OVER (PARTITION BY os.customer_unique_id ORDER BY os.purchased_at DESC, os.order_id DESC) AS seq_last
+    FROM mart.order_summary os
+    LEFT JOIN order_category oc ON oc.order_id = os.order_id
+)
+SELECT
+    customer_unique_id,
+    MAX(purchase_month)  FILTER (WHERE seq_first = 1)                 AS first_order_month,
+    MAX(category_label)  FILTER (WHERE seq_first = 1)                 AS first_category,
+    MAX(customer_state)  FILTER (WHERE seq_last = 1)                  AS last_state,
+    COUNT(*)                                                          AS orders_count,
+    COUNT(*)             FILTER (WHERE is_revenue)                    AS delivered_orders,
+    COALESCE(SUM(goods_value) FILTER (WHERE is_revenue), 0)           AS revenue_total,
+    COUNT(*) >= 2                                                     AS is_repeat
+FROM orders
+GROUP BY customer_unique_id;
+
+COMMENT ON VIEW mart.v_customer IS 'Покупатель (customer_unique_id): первый месяц и категория, последний штат, заказы, выручка, признак повторного';
+-- <<< sql/60_mart/673_v_customer.sql
+
+-- >>> sql/60_mart/674_v_cohort.sql
+-- object : mart.v_order_seq, mart.v_cohort_retention
+-- grain  : v_order_seq = 1 заказ (order_id, все статусы); v_cohort_retention = когорта × месяц жизни × штат первого заказа × категория первого заказа
+-- source : mart.order_summary, mart.v_sales_item, mart.v_order_seq
+-- cc     : покупатель = customer_unique_id; когорта = месяц первого заказа; удержание неаддитивно: SUM(active_customers) / SUM(cohort_size), не AVG(retention_rate)
+-- why    : номер заказа покупателя для «новые / повторные» и матрица удержания 0..24 месяца для D3; месяцы вне наблюдаемого периода не выводятся, чтобы не занижать долю
+
+CREATE VIEW mart.v_order_seq AS
+WITH order_category AS (
+    SELECT DISTINCT ON (order_id) order_id, category_label
+    FROM mart.v_sales_item
+    ORDER BY order_id, order_item_id
+)
+SELECT
+    os.order_id,
+    os.customer_unique_id,
+    os.customer_state,
+    os.purchase_month,
+    FIRST_VALUE(oc.category_label) OVER (
+        PARTITION BY os.customer_unique_id ORDER BY os.purchased_at, os.order_id
+    )                                                                                          AS first_category,
+    ROW_NUMBER() OVER (PARTITION BY os.customer_unique_id ORDER BY os.purchased_at, os.order_id) AS customer_order_seq,
+    ROW_NUMBER() OVER (PARTITION BY os.customer_unique_id ORDER BY os.purchased_at, os.order_id) = 1 AS is_first_order
+FROM mart.order_summary os
+LEFT JOIN order_category oc ON oc.order_id = os.order_id;
+
+COMMENT ON VIEW mart.v_order_seq IS 'Заказ с порядковым номером у покупателя (customer_unique_id) и категорией его первого заказа';
+
+CREATE VIEW mart.v_cohort_retention AS
+WITH firsts AS (
+    SELECT customer_unique_id,
+           purchase_month  AS cohort_month,
+           customer_state  AS first_state,
+           first_category
+    FROM mart.v_order_seq
+    WHERE is_first_order
+),
+cohorts AS (
+    SELECT cohort_month, first_state, first_category, COUNT(*) AS cohort_size
+    FROM firsts
+    GROUP BY cohort_month, first_state, first_category
+),
+activity AS (
+    SELECT
+        f.cohort_month,
+        f.first_state,
+        f.first_category,
+        ((EXTRACT(YEAR FROM s.purchase_month) - EXTRACT(YEAR FROM f.cohort_month)) * 12
+         + EXTRACT(MONTH FROM s.purchase_month) - EXTRACT(MONTH FROM f.cohort_month))::int AS month_offset,
+        COUNT(DISTINCT s.customer_unique_id) AS active_customers
+    FROM mart.v_order_seq s
+    JOIN firsts f ON f.customer_unique_id = s.customer_unique_id
+    GROUP BY 1, 2, 3, 4
+),
+bounds AS (
+    SELECT MAX(purchase_month) AS last_month FROM mart.v_order_seq
+)
+SELECT
+    c.cohort_month,
+    g.month_offset,
+    c.first_state,
+    c.first_category,
+    c.cohort_size,
+    COALESCE(a.active_customers, 0)                                         AS active_customers,
+    ROUND(COALESCE(a.active_customers, 0)::numeric / c.cohort_size, 4)      AS retention_rate
+FROM cohorts c
+CROSS JOIN bounds b
+CROSS JOIN generate_series(0, 24) AS g(month_offset)
+LEFT JOIN activity a
+       ON a.cohort_month = c.cohort_month
+      AND a.month_offset = g.month_offset
+      AND a.first_state IS NOT DISTINCT FROM c.first_state
+      AND a.first_category IS NOT DISTINCT FROM c.first_category
+WHERE (c.cohort_month + make_interval(months => g.month_offset))::date <= b.last_month;
+
+COMMENT ON VIEW mart.v_cohort_retention IS 'Удержание: когорта (месяц 1-го заказа) × месяц жизни 0..24 × штат × категория 1-го заказа; только наблюдаемые месяцы';
+-- <<< sql/60_mart/674_v_cohort.sql
+
+-- >>> sql/60_mart/675_v_stream_throughput.sql
+-- object : mart.v_stream_throughput
+-- grain  : 1 строка = 1 минута (UTC, date_trunc по received_at) за последние 60 минут
+-- source : landing.events
+-- cc     : K0 §4.2 (received_at UTC, status), K4 §4 (источник D4 timeseries)
+-- why    : пропускная способность потока по минутам для панели D4 Pipeline; VIEW — данные потока видны сразу, без REFRESH
+
+CREATE VIEW mart.v_stream_throughput AS
+SELECT
+    date_trunc('minute', received_at) AS minute,
+    COUNT(*) AS events,
+    COUNT(*) FILTER (WHERE status = 'applied') AS applied,
+    COUNT(*) FILTER (WHERE status = 'error') AS errors
+FROM landing.events
+WHERE received_at >= (now() AT TIME ZONE 'utc') - INTERVAL '60 minutes'
+GROUP BY date_trunc('minute', received_at);
+-- <<< sql/60_mart/675_v_stream_throughput.sql
+
 -- >>> sql/70_answers/700_answers_q01_q05.sql
 -- object : mart.q01..q05 — ответы на вопросы аналитиков (docs/tasks.md, блок А)
 -- grain  : по каждому вопросу — своя (месяц / продавец / одна строка / категория)
@@ -971,12 +1283,31 @@ SELECT now() AS built_at;
 -- cc     : строки не теряются между raw и core; пропуски в raw сохраняются, а не «лечатся»
 -- why    : самопроверка видна на странице, а не только в логе сборки
 
+-- при заданном cutoff (ops.build_params) raw-сторона заказов и их позиций/платежей/отзывов считается с тем же фильтром, что в stg (K3 §3.1)
 CREATE VIEW mart.v_layer_rows AS
+WITH p AS (
+    SELECT (SELECT cutoff FROM ops.build_params WHERE id = 1) AS cutoff
+),
+
+ro AS (
+    SELECT NULLIF(TRIM(o.order_id), '') AS order_id
+    FROM raw.orders AS o
+    CROSS JOIN p
+    WHERE p.cutoff IS NULL
+        OR NULLIF(TRIM(o.order_purchase_timestamp), '')::timestamp < p.cutoff
+)
+
 SELECT * FROM (VALUES
-    ('orders',              (SELECT COUNT(*) FROM raw.orders),                       (SELECT COUNT(*) FROM core.fact_order)),
-    ('order_items',         (SELECT COUNT(*) FROM raw.order_items),                  (SELECT COUNT(*) FROM core.fact_order_item)),
-    ('order_payments',      (SELECT COUNT(*) FROM raw.order_payments),               (SELECT COUNT(*) FROM core.fact_order_payment)),
-    ('order_reviews',       (SELECT COUNT(*) FROM raw.order_reviews),                (SELECT COUNT(*) FROM core.fact_order_review)),
+    ('orders',              (SELECT COUNT(*) FROM ro),                               (SELECT COUNT(*) FROM core.fact_order)),
+    ('order_items',         (SELECT COUNT(*) FROM raw.order_items AS t, p
+                             WHERE p.cutoff IS NULL OR EXISTS (SELECT 1 FROM ro WHERE ro.order_id = NULLIF(TRIM(t.order_id), ''))),
+                            (SELECT COUNT(*) FROM core.fact_order_item)),
+    ('order_payments',      (SELECT COUNT(*) FROM raw.order_payments AS t, p
+                             WHERE p.cutoff IS NULL OR EXISTS (SELECT 1 FROM ro WHERE ro.order_id = NULLIF(TRIM(t.order_id), ''))),
+                            (SELECT COUNT(*) FROM core.fact_order_payment)),
+    ('order_reviews',       (SELECT COUNT(*) FROM raw.order_reviews AS t, p
+                             WHERE p.cutoff IS NULL OR EXISTS (SELECT 1 FROM ro WHERE ro.order_id = NULLIF(TRIM(t.order_id), ''))),
+                            (SELECT COUNT(*) FROM core.fact_order_review)),
     ('products',            (SELECT COUNT(*) FROM raw.products),                     (SELECT COUNT(*) FROM core.dim_product)),
     ('sellers',             (SELECT COUNT(*) FROM raw.sellers),                      (SELECT COUNT(*) FROM core.dim_seller)),
     ('customers',           (SELECT COUNT(*) FROM raw.customers),                    (SELECT COUNT(*) FROM core.dim_customer)),
@@ -1009,7 +1340,8 @@ GROUP BY source_table, key;
 -- grain  : 1 INSERT = 1 проверка
 -- source : raw.*, core.*, mart.*
 -- cc     : DQ-xx из ТЗ §9; контроли Q1–Q5 из tasks.md; инварианты EDA-ноутбука (notebooks/01_*)
--- why    : новая проверка = новая строка в VALUES по этому же шаблону
+-- why    : новая проверка = новая строка в VALUES по этому же шаблону;
+--          при cutoff (ops.build_params) константные эталоны (is_const) пишутся passed=true, expected='skip: cutoff' (K3 §3.1)
 
 -- 1. Полнота: ни одна строка raw не потеряна в модели
 INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
@@ -1019,47 +1351,53 @@ FROM mart.v_layer_rows;
 
 -- 2. Инварианты данных и контроли вопросов
 INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
-SELECT check_id, description, expected, actual, expected = actual
+SELECT
+    t.check_id,
+    t.description,
+    CASE WHEN t.is_const AND c.cutoff IS NOT NULL THEN 'skip: cutoff' ELSE t.expected END,
+    t.actual,
+    (t.is_const AND c.cutoff IS NOT NULL) OR t.expected = t.actual
 FROM (VALUES
     ('DQ-02', 'нет статусов unknown',
-     '0', (SELECT COUNT(*)::text FROM core.fact_order WHERE order_status = 'unknown')),
+     '0', (SELECT COUNT(*)::text FROM core.fact_order WHERE order_status = 'unknown'), FALSE),
     ('DQ-03', 'заказов без позиций (сохраняются, не удаляются)',
-     '775', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_items)),
+     '775', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_items), TRUE),
     ('DQ-04', 'заказов без оплаты',
-     '1', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_payments)),
+     '1', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_payments), TRUE),
     ('DQ-05', 'заказов с несколькими отзывами (все отзывы сохранены)',
-     '547', (SELECT COUNT(*)::text FROM mart.order_summary WHERE review_count > 1)),
+     '547', (SELECT COUNT(*)::text FROM mart.order_summary WHERE review_count > 1), TRUE),
     ('DQ-06', 'товаров без категории → __unknown__',
-     '610', (SELECT COUNT(*)::text FROM core.dim_product WHERE is_missing_category)),
+     '610', (SELECT COUNT(*)::text FROM core.dim_product WHERE is_missing_category), TRUE),
     ('DQ-07', 'категорий без перевода',
-     '2', (SELECT COUNT(*)::text FROM core.dim_category WHERE is_untranslated)),
+     '2', (SELECT COUNT(*)::text FROM core.dim_category WHERE is_untranslated), TRUE),
     ('DQ-08', 'расхождений оплаты: всего / больше копейки',
      '639 / 366', (SELECT COUNT(*) FILTER (WHERE reconciliation = 'Расхождение') || ' / '
-                       || COUNT(*) FILTER (WHERE ABS(payment_delta) > 0.01) FROM mart.order_summary)),
+                       || COUNT(*) FILTER (WHERE ABS(payment_delta) > 0.01) FROM mart.order_summary), TRUE),
     ('DQ-09', 'delivered без даты вручения (в продажах есть, в сроках нет)',
-     '8', (SELECT COUNT(*)::text FROM mart.order_summary WHERE order_status = 'delivered' AND delivered_customer_at IS NULL)),
+     '8', (SELECT COUNT(*)::text FROM mart.order_summary WHERE order_status = 'delivered' AND delivered_customer_at IS NULL), TRUE),
     ('DQ-10', 'сумма позиций по заказам = сумме позиций',
-     (SELECT SUM(price)::text FROM core.fact_order_item), (SELECT SUM(goods_value)::text FROM mart.order_summary)),
+     (SELECT SUM(price)::text FROM core.fact_order_item), (SELECT SUM(goods_value)::text FROM mart.order_summary), FALSE),
     ('DQ-11', 'сумма оплат по заказам = сумме оплат',
-     (SELECT SUM(payment_value)::text FROM core.fact_order_payment), (SELECT SUM(payment_value)::text FROM mart.order_summary)),
+     (SELECT SUM(payment_value)::text FROM core.fact_order_payment), (SELECT SUM(payment_value)::text FROM mart.order_summary), FALSE),
     ('DQ-12', 'выручка: по продавцам = по категориям = по месяцам',
      (SELECT SUM(revenue)::text FROM mart.v_sales_month),
      (SELECT CASE WHEN (SELECT SUM(revenue) FROM mart.v_seller_sales) = (SELECT SUM(revenue) FROM mart.v_category_sales)
-                  THEN (SELECT SUM(revenue)::text FROM mart.v_seller_sales) ELSE 'не сходится' END)),
+                  THEN (SELECT SUM(revenue)::text FROM mart.v_seller_sales) ELSE 'не сходится' END), FALSE),
     ('Q1-CTRL', 'Q1: 24 месяца, итого выручка',
-     '24 / 13221498.11', (SELECT COUNT(*) || ' / ' || SUM(revenue) FROM mart.q01_revenue_by_month)),
+     '24 / 13221498.11', (SELECT COUNT(*) || ' / ' || SUM(revenue) FROM mart.q01_revenue_by_month), TRUE),
     ('Q1-ZERO', 'Q1: один месяц без выручки — 2016-11',
-     '2016-11-01', (SELECT string_agg(month::text, ',') FROM mart.q01_revenue_by_month WHERE revenue = 0)),
+     '2016-11-01', (SELECT string_agg(month::text, ',') FROM mart.q01_revenue_by_month WHERE revenue = 0), TRUE),
     ('Q2-CTRL', 'Q2: выручка первого продавца',
-     '226987.93', (SELECT revenue::text FROM mart.q02_top_sellers LIMIT 1)),
+     '226987.93', (SELECT revenue::text FROM mart.q02_top_sellers LIMIT 1), TRUE),
     ('Q3-CTRL', 'Q3: средний чек заказа',
-     '159.88', (SELECT avg_check::text FROM mart.q03_avg_check)),
+     '159.88', (SELECT avg_check::text FROM mart.q03_avg_check), TRUE),
     ('Q4-CTRL', 'Q4: покупателей / вернулись, %',
-     '96096 / 3.12', (SELECT customers || ' / ' || returned_pct FROM mart.q04_repeat_customers)),
+     '96096 / 3.12', (SELECT customers || ' / ' || returned_pct FROM mart.q04_repeat_customers), TRUE),
     ('Q5-CTRL', 'Q5: категорий / у крупнейшей / сумма',
      '74 / 1233131.72 / 13221498.11',
-     (SELECT COUNT(*) || ' / ' || MAX(revenue) || ' / ' || SUM(revenue) FROM mart.q05_revenue_by_category))
-) AS t(check_id, description, expected, actual);
+     (SELECT COUNT(*) || ' / ' || MAX(revenue) || ' / ' || SUM(revenue) FROM mart.q05_revenue_by_category), TRUE)
+) AS t(check_id, description, expected, actual, is_const)
+CROSS JOIN (SELECT (SELECT cutoff FROM ops.build_params WHERE id = 1) AS cutoff) AS c;
 -- <<< sql/80_dq/810_dq_checks.sql
 
 -- >>> sql/80_dq/890_dq_run.sql
@@ -1114,5 +1452,26 @@ GRANT USAGE ON SCHEMA ops TO ingestor;
 GRANT SELECT, UPDATE ON ops.stream_status TO ingestor;
 GRANT SELECT ON ops.build_params TO ingestor;
 -- <<< sql/90_grants/900_grants.sql
+
+-- >>> sql/90_grants/910_grants_batch.sql
+-- object : гранты ingestor на ops.stream_pause
+-- grain  : -
+-- source : -
+-- cc     : K3 §3.3, K0 §4.4
+-- why    : протокол паузы: ingestor делает SELECT ... FOR SHARE, а FOR SHARE требует права UPDATE;
+--          гранты в конце бандла, чтобы пережить пересоздание схем (900_grants.sql не меняется)
+
+GRANT SELECT, UPDATE ON ops.stream_pause TO ingestor;
+-- <<< sql/90_grants/910_grants_batch.sql
+
+-- >>> sql/90_grants/920_grants_stream.sql
+-- object : гранты ingestor на ops.replay_runs
+-- grain  : -
+-- source : -
+-- cc     : K2 §6 п.3, ASSUMPTION-K2-1 (пробел K0)
+-- why    : ingestor пишет итоги реплея и отмечает догон; 900_grants.sql не меняем, гранты потока — здесь
+
+GRANT SELECT, INSERT, UPDATE ON ops.replay_runs TO ingestor;
+-- <<< sql/90_grants/920_grants_stream.sql
 
 COMMIT;

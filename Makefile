@@ -1,17 +1,19 @@
 COMPOSE := docker compose -f docker-compose.yml -f docker-compose.app.yml
+COMPOSE_FULL := $(COMPOSE) -f docker-compose.realtime.yml -f docker-compose.bi.yml --profile realtime --profile bi
 URL     := http://localhost:8000
 
-.PHONY: demo up etl notebook app bundle logs ps down reset help
+.PHONY: all demo up etl notebook app bundle logs ps down reset help
+
+all:  ## запустить приложение, Streamlit, поток и Grafana
+	@test -f data/olist_orders_dataset.csv || { echo 'Не найдены исходные CSV в папке data/. Добавьте исходные файлы Olist и повторите make all.' >&2; exit 1; }
+	$(COMPOSE_FULL) up -d --build --wait app web redpanda redpanda-console ingestor grafana
+	$(MAKE) demo-replay
 
 help:  ## список команд
 	@grep -hE '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-8s %s\n", $$1, $$2}'
 
-demo:  ## всё одной командой: база → raw → модель → DQ → приложение
-	$(COMPOSE) up -d --build app
-	@$(COMPOSE) logs --no-log-prefix etl
-	@printf "Жду приложение"; for i in $$(seq 1 60); do \
-		curl -sf $(URL)/health >/dev/null && { echo; echo "Готово: $(URL)"; exit 0; }; printf "."; sleep 1; done; \
-		echo; echo "Приложение не ответило, см. make logs"; exit 1
+demo:  ## запустить приложение, Streamlit, поток и Grafana
+	$(MAKE) all
 
 up:  ## только база
 	$(COMPOSE) up -d --wait postgres

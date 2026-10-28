@@ -9,3 +9,5 @@ jsonschema==4.26.0
 # поток K2: клиент Kafka (Redpanda)
 confluent-kafka==2.16.1
 pytest==9.2.0
+# TestClient FastAPI для тестов API (K1-T6)
+httpx==0.28.1

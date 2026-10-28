@@ -1,0 +1,9 @@
+# Лёгкий слой образа: меняется часто, пересборка занимает секунды (docker/python.Dockerfile).
+fastapi==0.115.6
+uvicorn==0.32.1
+jinja2==3.1.4
+# LLM-агент (K0-T4) и контракты
+openai==3.40.0
+python-dotenv==1.2.4
+jsonschema==4.26.0
+pytest==9.2.0

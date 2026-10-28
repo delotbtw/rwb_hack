@@ -1,7 +1,5 @@
-data
-.git
-.idea
-.venv
-**/__pycache__
-docs
-dist
+# Образ содержит только зависимости (см. docker/python.Dockerfile), код монтируется томом ./ → /work.
+# Из контекста нужен лишь requirements/, остальное исключаем: контекст — килобайты, а не гигабайты data/.
+*
+!requirements/
+!docker/

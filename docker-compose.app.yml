@@ -16,6 +16,7 @@ x-python: &python
     PGDATABASE: marketplace
     PGUSER: hack
     PGPASSWORD: hack
+    API_PGHOST: postgres
 
 services:
   etl:

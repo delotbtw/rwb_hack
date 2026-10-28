@@ -1,0 +1,106 @@
+# Поток real-time (K2): Redpanda + генератор + ingestor. Надстройка над docker-compose.yml (его не меняем):
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.realtime.yml --profile realtime up -d
+# Обычно через make: `make live`, `make demo-replay`, `make stream-reset` (make/stream.mk).
+# Все сервисы в профиле realtime: без --profile realtime ничего из этого файла не стартует.
+# Адреса брокера: внутри сети compose redpanda:9092, с хоста localhost:19092. Console: http://localhost:8089.
+
+x-python: &python
+  build:
+    context: .
+    dockerfile: docker/python.Dockerfile
+  image: capibara-python:dev
+  working_dir: /work
+  volumes:
+    - ./:/work
+
+services:
+  redpanda:
+    profiles: ["realtime"]
+    image: redpandadata/redpanda:v26.2.6
+    container_name: hack_redpanda
+    # dev-container: один узел без проверок железа; --smp 1 --memory 1G ограничивают ядра и память (демо на ноутбуке).
+    # Два listener-а: internal (между контейнерами) и external (с хоста); advertise должен совпадать с тем, как клиент
+    # сюда ходит, иначе после bootstrap клиент получит недоступный адрес.
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Веб-интерфейс брокера. Порт 8089: 8080 занят pgAdmin, 8082 Airflow, 3000 Grafana.
+  redpanda-console:
+    profiles: ["realtime"]
+    image: redpandadata/console:v3.13.1
+    container_name: hack_redpanda_console
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8089:8080"
+    restart: unless-stopped
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  # Одноразовый проигрыватель: entrypoint фиксирован, аргументы из `run --rm generator --cutoff D --duration S`
+  # дописываются к нему. Читает ./data/*.csv, в Postgres не ходит.
+  generator:
+    <<: *python
+    profiles: ["realtime"]
+    container_name: hack_generator
+    entrypoint: ["python", "-m", "stream.generator"]
+    command: []
+    environment:
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-redpanda:9092}
+    restart: "no"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  # Один экземпляр (группа capibara-ingestor, ручной commit offset). Пишет в БД ролью ingestor (sql/00_setup/001_roles.sql).
+  ingestor:
+    <<: *python
+    profiles: ["realtime"]
+    container_name: hack_ingestor
+    command: ["python", "-m", "stream.ingestor"]
+    environment:
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-redpanda:9092}
+      BATCH_MAX: ${BATCH_MAX:-500}
+      BATCH_WAIT_MS: ${BATCH_WAIT_MS:-200}
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: marketplace
+      PGUSER: ingestor
+      PGPASSWORD: ingestor
+    restart: unless-stopped
+    # Живость процесса (PID 1 = ingestor). Образ slim без pgrep, поэтому /proc. Лаг и ошибки смотреть в ops.stream_status.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q stream.ingestor /proc/1/cmdline"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+
+volumes:
+  redpanda-data:

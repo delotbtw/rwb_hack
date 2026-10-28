@@ -1,3 +1,4 @@
 # Локально: pip install -r requirements.txt. Образ ставит файлы по отдельности (слои), см. docker/python.Dockerfile.
 -r requirements/base.txt
 -r requirements/app.txt
+confluent-kafka==2.16.1

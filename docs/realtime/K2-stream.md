@@ -10,7 +10,7 @@
 - Роль `ingestor` по `900_grants.sql` (K0): `ALL` на `landing`, `SELECT/INSERT/UPDATE` на `core.*`, `SELECT/UPDATE` на `ops.stream_status`, `SELECT` на `ops.build_params`. Гранты K2 — только в `sql/90_grants/920_grants_stream.sql` (`900_grants.sql` не менять; K3 — `910_*`, K4 — `930_*`).
 
 ## 3. Клиент Kafka: `confluent-kafka`
-librdkafka (540 событий/с с запасом), синхронный API ложится на «пачка → COMMIT в PG → `commit()`», есть `AdminClient`, wheels под linux/arm64. `aiokafka` — лишний asyncio при psycopg2; `kafka-python` слабо поддерживается. Пин точной версии (последняя стабильная, wheel под Python 3.12), K0 §2.4.
+librdkafka (≈650 событий/с с запасом), синхронный API ложится на «пачка → COMMIT в PG → `commit()`», есть `AdminClient`, wheels под linux/arm64. `aiokafka` — лишний asyncio при psycopg2; `kafka-python` слабо поддерживается. Пин точной версии (последняя стабильная, wheel под Python 3.12), K0 §2.4.
 
 ## 4. Генератор `python -m stream.generator`
 Читает `data/*.csv`, дедуп/нормализация как в `sql/20_staging`, аномалии не правим. Параметры: `--cutoff D` (= `--from D`: заказы с `purchased_at >= D`, без него весь датасет), `--duration S`, `--max-gap` (0.2 с), `--noise` (Should: ~1 % дублей и перестановок).
@@ -49,7 +49,7 @@ PK уже есть у всех фактов и измерений (300, 310, 320
 `make/stream.mk` (единственная make-правка K2; `Makefile` не трогать — строку `-include make/*.mk` добавляет оркестратор): `COMPOSE_RT := $(COMPOSE) -f docker-compose.realtime.yml --profile realtime`. `make live`: `postgres`, `redpanda`, `redpanda-console`, `ingestor` до healthy. `make demo-replay`: `live` + `run --rm generator --cutoff $(CUTOFF) --duration $(DURATION)`, печать `stream_status`. `make stream-reset`: остановить `ingestor`, `run --rm … python -m stream.broker_reset`; ingestor остаётся остановленным до `make live`.
 
 ## 8. Критерии готовности
-- A-1 `--cutoff 2018-08-01`: 6 532 заказа, ≈32 000 событий (±2 %) + один `replay.completed`.
+- A-1 `--cutoff 2018-08-01`: 6 532 заказа, 39 099 событий (±2 %) + один `replay.completed` (уточнено по факту §4 п.2: три статусных события на delivered-заказ).
 - A-2 События валидны по `contracts/events`; `created` каждого заказа первый; ключ = `order_id`.
 - A-3 Два запуска → одинаковые `event_id`.
 - A-4 `schedule()`: порядок сохранён, пауза ≤ `max_gap`, сумма ∈ [0.9S, S] при S=60.

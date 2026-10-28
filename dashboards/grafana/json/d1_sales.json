@@ -1,0 +1,1180 @@
+{
+  "uid": "capibara-d1",
+  "title": "D1. Продажи",
+  "description": "Выручка, заказы, категории, продавцы, штаты и оплаты (mart.v_sales_item, mart.order_summary, mart.v_payment).",
+  "tags": [
+    "capibara",
+    "sales"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "2016-09-01T00:00:00.000Z",
+    "to": "2018-11-01T00:00:00.000Z"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "customer_state",
+        "label": "Штат покупателя",
+        "description": "Штат покупателя; All включает позиции без штата",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT customer_state FROM mart.v_sales_item WHERE customer_state IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT customer_state FROM mart.v_sales_item WHERE customer_state IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "seller_state",
+        "label": "Штат продавца",
+        "description": "Штат продавца; All включает позиции без штата",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT seller_state FROM mart.v_sales_item WHERE seller_state IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT seller_state FROM mart.v_sales_item WHERE seller_state IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "category",
+        "label": "Категория",
+        "description": "Категория товара; All включает позиции без категории",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT category_label FROM mart.v_sales_item WHERE category_label IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT category_label FROM mart.v_sales_item WHERE category_label IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "gran",
+        "label": "Детализация",
+        "description": "Шаг временного ряда",
+        "type": "custom",
+        "query": "week : week,month : month,quarter : quarter",
+        "options": [
+          {
+            "selected": false,
+            "text": "week",
+            "value": "week"
+          },
+          {
+            "selected": true,
+            "text": "month",
+            "value": "month"
+          },
+          {
+            "selected": false,
+            "text": "quarter",
+            "value": "quarter"
+          }
+        ],
+        "current": {
+          "selected": true,
+          "text": "month",
+          "value": "month"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Выручка",
+      "description": "Σ price по доставленным заказам, без фрахта (metric_catalog.revenue). Срезы: период, штаты покупателя и продавца, категория. Единица: R$.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT SUM(price) FILTER (WHERE is_revenue) AS revenue\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "GMV с доставкой",
+      "description": "Выручка + фрахт доставленных заказов: SUM(price + freight_value) FILTER (WHERE is_revenue) = revenue + freight_total. Справочно, не выручка. Срезы: все фильтры.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT SUM(price + freight_value) FILTER (WHERE is_revenue) AS gmv_with_freight\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Единицы",
+      "description": "Число проданных позиций доставленных заказов (metric_catalog.units_sold). Срезы: все фильтры.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_revenue) AS units_sold\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Заказы (без среза по продавцу и категории)",
+      "description": "Число доставленных заказов (metric_catalog.orders_delivered) по order_summary. Неаддитивная метрика: заказ с несколькими продавцами или категориями нельзя разнести по срезам, поэтому учитываются только период и штат покупателя.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_revenue) AS orders_delivered\nFROM mart.order_summary\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Средний чек (без среза по продавцу и категории)",
+      "description": "Средняя стоимость доставленного заказа, цены + фрахт (metric_catalog.avg_check) по order_summary. Неаддитивная метрика: считается на срезе заново; учитываются только период и штат покупателя. Единица: R$.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ROUND(SUM(order_value) FILTER (WHERE is_revenue) / NULLIF(COUNT(*) FILTER (WHERE is_revenue), 0), 2) AS avg_check\nFROM mart.order_summary\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Выручка и заказы по времени",
+      "description": "Выручка (столбцы, левая ось, R$) и доставленные заказы (линия, правая ось) по периодам из переменной «Детализация»: неделя, месяц или квартал по дате покупки. Заказы здесь считаются на выбранном срезе (COUNT(DISTINCT order_id)) и по периодам не суммируются.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 16,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  date_trunc('$gran', purchase_ts) AS time,\n  SUM(price) FILTER (WHERE is_revenue) AS \"Выручка\",\n  COUNT(DISTINCT order_id) FILTER (WHERE is_revenue) AS \"Заказы\"\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Выручка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyBRL"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 70
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Заказы"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Топ-15 категорий: доля выручки",
+      "description": "Доля категории = Σ price категории / Σ price всех категорий на текущем срезе (неаддитивно: пересчитывается при любом фильтре; доли топ-15 в сумме не дают 100 %). Только доставленные заказы.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(category_label, 'Без категории') AS \"Категория\",\n  SUM(price) FILTER (WHERE is_revenue) / NULLIF(SUM(SUM(price) FILTER (WHERE is_revenue)) OVER (), 0) AS \"Доля выручки\"\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))\nGROUP BY 1\nORDER BY 2 DESC NULLS LAST\nLIMIT 15"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "namePlacement": "left",
+        "minVizHeight": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "min": 0,
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Топ-10 продавцов по выручке",
+      "description": "Продавцы с наибольшей Σ price доставленных заказов на текущем срезе. «Заказы» = COUNT(DISTINCT order_id): заказ с несколькими продавцами учтён у каждого, поэтому столбец не суммируется. Экспорт: Inspect → Data → CSV.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 14,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  seller_id AS \"Продавец\",\n  seller_state AS \"Штат\",\n  COUNT(DISTINCT order_id) FILTER (WHERE is_revenue) AS \"Заказы\",\n  COUNT(*) FILTER (WHERE is_revenue) AS \"Единицы\",\n  SUM(price) FILTER (WHERE is_revenue) AS \"Выручка\"\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))\nGROUP BY seller_id, seller_state\nORDER BY \"Выручка\" DESC NULLS LAST\nLIMIT 10"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Продавец"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 290
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Штат"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Заказы"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Единицы"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Выручка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyBRL"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Выручка по штату покупателя",
+      "description": "Σ price доставленных заказов по штату покупателя на текущем срезе (вместо карты). «не определён» — позиции без штата, они не теряются.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 14,
+        "w": 5,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(customer_state, 'не определён') AS \"Штат покупателя\",\n  SUM(price) FILTER (WHERE is_revenue) AS \"Выручка\"\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))\nGROUP BY 1\nORDER BY 2 DESC NULLS LAST"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Штат покупателя",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "auto",
+        "barWidth": 0.8,
+        "groupWidth": 0.8,
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Выручка по штату продавца",
+      "description": "Σ price доставленных заказов по штату продавца на текущем срезе. «не определён» — позиции без штата, они не теряются.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 14,
+        "w": 5,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(seller_state, 'не определён') AS \"Штат продавца\",\n  SUM(price) FILTER (WHERE is_revenue) AS \"Выручка\"\nFROM mart.v_sales_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\n  AND ('*' IN ($category) OR category_label IN ($category))\nGROUP BY 1\nORDER BY 2 DESC NULLS LAST"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Штат продавца",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "auto",
+        "barWidth": 0.8,
+        "groupWidth": 0.8,
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "piechart",
+      "title": "Оплаты по способам (без среза по продавцу и категории)",
+      "description": "Σ payment_value доставленных заказов по способу оплаты (metric_catalog.payments_total). Источник mart.v_payment: платёж не привязан к позиции, поэтому учитываются только период и штат покупателя. Сумма оплат может отличаться от выручки (фрахт, расхождения оплаты).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT payment_type AS \"Способ оплаты\",\n  SUM(payment_value) FILTER (WHERE is_revenue) AS \"Сумма оплат\"\nFROM mart.v_payment\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\nGROUP BY payment_type\nHAVING SUM(payment_value) FILTER (WHERE is_revenue) > 0\nORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Структура оплат (без среза по продавцу и категории)",
+      "description": "По способам оплаты: число платежей, Σ payment_value, доля в сумме (неаддитивно, пересчитывается на срезе) и средняя рассрочка. Учитываются период и штат покупателя, только доставленные заказы.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 24,
+        "w": 16,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  payment_type AS \"Способ оплаты\",\n  COUNT(*) FILTER (WHERE is_revenue) AS \"Платежи\",\n  SUM(payment_value) FILTER (WHERE is_revenue) AS \"Сумма оплат\",\n  SUM(payment_value) FILTER (WHERE is_revenue)\n    / NULLIF(SUM(SUM(payment_value) FILTER (WHERE is_revenue)) OVER (), 0) AS \"Доля\",\n  AVG(installments) FILTER (WHERE is_revenue) AS \"Ср. рассрочка, мес.\"\nFROM mart.v_payment\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\nGROUP BY payment_type\nORDER BY 3 DESC NULLS LAST"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Платежи"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Сумма оплат"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyBRL"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Доля"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ср. рассрочка, мес."
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Определения",
+      "description": "Формулы метрик дословно из mart.metric_catalog.formula_sql. GMV на панели посчитан на гранулe позиции (price + freight_value) вместо order_value, итог тот же.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT name AS \"Метрика\", formula_sql AS \"Формула\", source_view AS \"Источник\", unit AS \"Единица\",\n  CASE WHEN is_additive THEN 'аддитивная' ELSE 'неаддитивная' END AS \"Тип\"\nFROM mart.metric_catalog\nWHERE metric_code IN ('revenue', 'gmv_with_freight', 'units_sold', 'orders_delivered', 'avg_check', 'payments_total')\nORDER BY metric_code"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Метрика"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Формула"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 520
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Источник"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Единица"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

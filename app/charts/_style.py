@@ -5,6 +5,7 @@ from matplotlib.ticker import FuncFormatter
 
 ACCENT = "#2563eb"
 MUTED = "#94a3b8"
+WARN = "#d97706"
 
 
 def new_figure(width: float = 10, height: float = 4.8) -> tuple[Figure, "Axes"]:  # noqa: F821

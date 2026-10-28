@@ -55,9 +55,10 @@ def raw_is_loaded() -> bool:
 
 
 def load_raw() -> None:
-    # load_raw.py делает DROP TABLE raw.*, а views stg зависят от raw — сносим их, модель всё равно пересоберётся
+    # load_raw.py делает DROP TABLE raw.*, а views stg и DQ-витрины зависят от raw — сносим слои модели,
+    # она всё равно пересобирается следующим шагом
     with psycopg2.connect(**DSN) as conn, conn.cursor() as cur:
-        cur.execute("DROP SCHEMA IF EXISTS stg CASCADE")
+        cur.execute("DROP SCHEMA IF EXISTS stg CASCADE; DROP SCHEMA IF EXISTS mart CASCADE")
     cmd = [
         sys.executable, str(ROOT / "scripts" / "load_raw.py"),
         "--host", DSN["host"], "--port", str(DSN["port"]), "--db", DSN["dbname"],

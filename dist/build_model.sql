@@ -87,10 +87,199 @@ SELECT
 FROM raw.order_items;
 -- <<< sql/20_staging/210_stg_order_items.sql
 
+-- >>> sql/20_staging/220_stg_order_payments.sql
+-- object : stg.order_payments
+-- grain  : 1 строка = 1 платёжная запись заказа
+-- source : raw.order_payments
+-- cc     : installments = 0 сохраняется как есть (не подменяем на 1); payment_value не умножается на installments
+-- why    : деньги в numeric(12,2), номера и рассрочка в int
+
+CREATE VIEW stg.order_payments AS
+SELECT
+    NULLIF(TRIM(order_id), '')                        AS order_id,
+    NULLIF(TRIM(payment_sequential), '')::int         AS payment_sequential,
+    LOWER(NULLIF(TRIM(payment_type), ''))             AS payment_type,
+    NULLIF(TRIM(payment_installments), '')::int       AS payment_installments,
+    NULLIF(TRIM(payment_value), '')::numeric(12, 2)   AS payment_value
+FROM raw.order_payments;
+-- <<< sql/20_staging/220_stg_order_payments.sql
+
+-- >>> sql/20_staging/230_stg_order_reviews.sql
+-- object : stg.order_reviews
+-- grain  : 1 строка = 1 связь отзыва с заказом; ключ (review_id, order_id)
+-- source : raw.order_reviews
+-- cc     : review_id не уникален сам по себе, у 547 заказов несколько отзывов — DISTINCT не делаем
+-- why    : оценка в int, пустой текст отзыва — NULL, а не пустая строка
+
+CREATE VIEW stg.order_reviews AS
+SELECT
+    NULLIF(TRIM(review_id), '')                           AS review_id,
+    NULLIF(TRIM(order_id), '')                            AS order_id,
+    NULLIF(TRIM(review_score), '')::int                   AS review_score,
+    NULLIF(TRIM(review_comment_title), '')                AS review_comment_title,
+    NULLIF(TRIM(review_comment_message), '')              AS review_comment_message,
+    NULLIF(TRIM(review_creation_date), '')::timestamp     AS review_created_at,
+    NULLIF(TRIM(review_answer_timestamp), '')::timestamp  AS review_answered_at
+FROM raw.order_reviews;
+-- <<< sql/20_staging/230_stg_order_reviews.sql
+
+-- >>> sql/20_staging/240_stg_products.sql
+-- object : stg.products
+-- grain  : 1 строка = 1 карточка товара
+-- source : raw.products
+-- cc     : 610 товаров без категории → category_key '__unknown__'; опечатка lenght исправлена в именах колонок
+-- why    : числовые характеристики в int, исходное название категории сохраняется отдельно от ключа
+
+CREATE VIEW stg.products AS
+SELECT
+    NULLIF(TRIM(product_id), '')                              AS product_id,
+    NULLIF(TRIM(product_category_name), '')                   AS category_name,
+    COALESCE(NULLIF(TRIM(product_category_name), ''), '__unknown__') AS category_key,
+    NULLIF(TRIM(product_name_lenght), '')::int                AS name_length,
+    NULLIF(TRIM(product_description_lenght), '')::int         AS description_length,
+    NULLIF(TRIM(product_photos_qty), '')::int                 AS photos_qty,
+    NULLIF(TRIM(product_weight_g), '')::int                   AS weight_g,
+    NULLIF(TRIM(product_length_cm), '')::int                  AS length_cm,
+    NULLIF(TRIM(product_height_cm), '')::int                  AS height_cm,
+    NULLIF(TRIM(product_width_cm), '')::int                   AS width_cm
+FROM raw.products;
+-- <<< sql/20_staging/240_stg_products.sql
+
+-- >>> sql/20_staging/250_stg_sellers.sql
+-- object : stg.sellers
+-- grain  : 1 строка = 1 продавец
+-- source : raw.sellers
+-- cc     : город/штат нормализуются в отдельные колонки, исходные значения сохраняются
+-- why    : zip-префикс остаётся text — ведущие нули не теряются
+
+CREATE VIEW stg.sellers AS
+SELECT
+    NULLIF(TRIM(seller_id), '')               AS seller_id,
+    NULLIF(TRIM(seller_zip_code_prefix), '')  AS zip_prefix,
+    NULLIF(TRIM(seller_city), '')             AS city,
+    NULLIF(TRIM(seller_state), '')            AS state,
+    LOWER(NULLIF(TRIM(seller_city), ''))      AS city_normalized,
+    UPPER(NULLIF(TRIM(seller_state), ''))     AS state_normalized
+FROM raw.sellers;
+-- <<< sql/20_staging/250_stg_sellers.sql
+
+-- >>> sql/20_staging/260_stg_customers.sql
+-- object : stg.customers
+-- grain  : 1 строка = 1 контекст покупателя в заказе (customer_id); человек — customer_unique_id
+-- source : raw.customers
+-- cc     : 99 441 customer_id ↔ 96 096 customer_unique_id; покупателей считаем по unique_id
+-- why    : город/штат нормализуются в отдельные колонки, исходные значения сохраняются
+
+CREATE VIEW stg.customers AS
+SELECT
+    NULLIF(TRIM(customer_id), '')               AS customer_id,
+    NULLIF(TRIM(customer_unique_id), '')        AS customer_unique_id,
+    NULLIF(TRIM(customer_zip_code_prefix), '')  AS zip_prefix,
+    NULLIF(TRIM(customer_city), '')             AS city,
+    NULLIF(TRIM(customer_state), '')            AS state,
+    LOWER(NULLIF(TRIM(customer_city), ''))      AS city_normalized,
+    UPPER(NULLIF(TRIM(customer_state), ''))     AS state_normalized
+FROM raw.customers;
+-- <<< sql/20_staging/260_stg_customers.sql
+
+-- >>> sql/20_staging/270_stg_category_translation.sql
+-- object : stg.category_translation
+-- grain  : 1 строка = 1 перевод категории
+-- source : raw.product_category_translation
+-- cc     : 2 категории товаров без перевода (pc_gamer, portateis_cozinha_e_preparadores_de_alimentos)
+-- why    : справочник перевода — необязательная подпись, а не фильтр допустимых категорий
+
+CREATE VIEW stg.category_translation AS
+SELECT
+    NULLIF(TRIM(product_category_name), '')          AS category_name,
+    NULLIF(TRIM(product_category_name_english), '')  AS category_name_en
+FROM raw.product_category_translation;
+-- <<< sql/20_staging/270_stg_category_translation.sql
+
+-- >>> sql/30_core_dim/300_dim_customer.sql
+-- object : core.dim_customer
+-- grain  : 1 строка = 1 customer_id (контекст покупателя в заказе); PK customer_id
+-- source : stg.customers
+-- cc     : человек = customer_unique_id (96 096), customer_id меняется от заказа к заказу (99 441)
+-- why    : повторность и число покупателей считаются по customer_unique_id, адрес — контекстный
+
+CREATE TABLE core.dim_customer AS
+SELECT customer_id, customer_unique_id, zip_prefix, city, state, city_normalized, state_normalized
+FROM stg.customers;
+
+ALTER TABLE core.dim_customer ADD PRIMARY KEY (customer_id);
+ALTER TABLE core.dim_customer ALTER COLUMN customer_unique_id SET NOT NULL;
+CREATE INDEX ON core.dim_customer (customer_unique_id);
+-- <<< sql/30_core_dim/300_dim_customer.sql
+
+-- >>> sql/30_core_dim/310_dim_seller.sql
+-- object : core.dim_seller
+-- grain  : 1 строка = 1 продавец; PK seller_id
+-- source : stg.sellers
+-- cc     : -
+-- why    : география продавца нужна для Q2 (город, штат) и срезов доставки
+
+CREATE TABLE core.dim_seller AS
+SELECT seller_id, zip_prefix, city, state, city_normalized, state_normalized
+FROM stg.sellers;
+
+ALTER TABLE core.dim_seller ADD PRIMARY KEY (seller_id);
+-- <<< sql/30_core_dim/310_dim_seller.sql
+
+-- >>> sql/30_core_dim/320_dim_category.sql
+-- object : core.dim_category
+-- grain  : 1 строка = 1 категория; PK category_key
+-- source : stg.products, stg.category_translation
+-- cc     : 71 перевод + 2 категории без перевода + '__unknown__' (610 товаров без категории) = 74
+-- why    : справочник строится из товаров И переводов — неполный перевод не отсекает товары
+
+CREATE TABLE core.dim_category AS
+WITH names AS (
+    SELECT category_name FROM stg.products WHERE category_name IS NOT NULL
+    UNION
+    SELECT category_name FROM stg.category_translation WHERE category_name IS NOT NULL
+)
+SELECT
+    n.category_name                          AS category_key,
+    n.category_name                          AS category_name,
+    t.category_name_en,
+    COALESCE(t.category_name_en, n.category_name) AS label,
+    t.category_name_en IS NULL               AS is_untranslated,
+    false                                    AS is_unknown
+FROM names n
+LEFT JOIN stg.category_translation t ON t.category_name = n.category_name
+UNION ALL
+SELECT '__unknown__', NULL, NULL, 'Неизвестная категория', false, true;
+
+ALTER TABLE core.dim_category ADD PRIMARY KEY (category_key);
+-- <<< sql/30_core_dim/320_dim_category.sql
+
+-- >>> sql/30_core_dim/330_dim_product.sql
+-- object : core.dim_product
+-- grain  : 1 строка = 1 товар; PK product_id
+-- source : stg.products, core.dim_category
+-- cc     : пустая категория → '__unknown__' + флаг is_missing_category; габариты nullable
+-- why    : категория — FK на справочник, исходное название сохраняется для прозрачности
+
+CREATE TABLE core.dim_product AS
+SELECT
+    product_id,
+    category_key,
+    category_name,
+    category_name IS NULL AS is_missing_category,
+    name_length, description_length, photos_qty,
+    weight_g, length_cm, height_cm, width_cm
+FROM stg.products;
+
+ALTER TABLE core.dim_product ADD PRIMARY KEY (product_id);
+ALTER TABLE core.dim_product
+    ADD FOREIGN KEY (category_key) REFERENCES core.dim_category (category_key);
+-- <<< sql/30_core_dim/330_dim_product.sql
+
 -- >>> sql/40_core_fact/400_fact_order.sql
 -- object : core.fact_order
 -- grain  : 1 строка = 1 заказ; PK order_id
--- source : stg.orders, core.dim_order_status
+-- source : stg.orders, core.dim_order_status, core.dim_customer
 -- cc     : неизвестный статус → 'unknown' (unknown-member), строка не теряется
 -- why    : заказ — отдельный факт, позиции не смешиваются с ним по грануле
 
@@ -110,12 +299,14 @@ LEFT JOIN core.dim_order_status s ON s.order_status = o.order_status;
 ALTER TABLE core.fact_order ADD PRIMARY KEY (order_id);
 ALTER TABLE core.fact_order
     ADD FOREIGN KEY (order_status) REFERENCES core.dim_order_status (order_status);
+ALTER TABLE core.fact_order
+    ADD FOREIGN KEY (customer_id) REFERENCES core.dim_customer (customer_id);
 -- <<< sql/40_core_fact/400_fact_order.sql
 
 -- >>> sql/40_core_fact/410_fact_order_item.sql
 -- object : core.fact_order_item
 -- grain  : 1 строка = 1 позиция заказа; PK (order_id, order_item_id)
--- source : stg.order_items
+-- source : stg.order_items, core.dim_product, core.dim_seller
 -- cc     : CC-09 (order_item_id — номер позиции)
 -- why    : выручка продавца и категории считается на этой грануле
 
@@ -133,7 +324,51 @@ FROM stg.order_items;
 ALTER TABLE core.fact_order_item ADD PRIMARY KEY (order_id, order_item_id);
 ALTER TABLE core.fact_order_item
     ADD FOREIGN KEY (order_id) REFERENCES core.fact_order (order_id);
+ALTER TABLE core.fact_order_item
+    ADD FOREIGN KEY (product_id) REFERENCES core.dim_product (product_id);
+ALTER TABLE core.fact_order_item
+    ADD FOREIGN KEY (seller_id) REFERENCES core.dim_seller (seller_id);
+CREATE INDEX ON core.fact_order_item (seller_id);
+CREATE INDEX ON core.fact_order_item (product_id);
 -- <<< sql/40_core_fact/410_fact_order_item.sql
+
+-- >>> sql/40_core_fact/420_fact_order_payment.sql
+-- object : core.fact_order_payment
+-- grain  : 1 строка = 1 платёжная запись; PK (order_id, payment_sequential)
+-- source : stg.order_payments
+-- cc     : 1 заказ без оплаты; installments = 0 сохранён; сумма оплат ≠ сумме позиций у 639 заказов
+-- why    : платёж — отдельный факт, с позициями соединяется только после агрегации до заказа
+
+CREATE TABLE core.fact_order_payment AS
+SELECT order_id, payment_sequential, payment_type, payment_installments, payment_value
+FROM stg.order_payments;
+
+ALTER TABLE core.fact_order_payment ADD PRIMARY KEY (order_id, payment_sequential);
+ALTER TABLE core.fact_order_payment
+    ADD FOREIGN KEY (order_id) REFERENCES core.fact_order (order_id);
+-- <<< sql/40_core_fact/420_fact_order_payment.sql
+
+-- >>> sql/40_core_fact/430_fact_order_review.sql
+-- object : core.fact_order_review
+-- grain  : 1 строка = 1 связь отзыва с заказом; PK (review_id, order_id)
+-- source : stg.order_reviews
+-- cc     : 547 заказов с несколькими отзывами — все записи сохраняются, оценка заказа = среднее
+-- why    : отсутствие отзыва не равно нулевой оценке — заказ без отзыва просто не попадает сюда
+
+CREATE TABLE core.fact_order_review AS
+SELECT
+    review_id, order_id, review_score,
+    review_comment_title, review_comment_message,
+    review_comment_message IS NOT NULL AS has_text,
+    review_created_at, review_answered_at
+FROM stg.order_reviews;
+
+ALTER TABLE core.fact_order_review ADD PRIMARY KEY (review_id, order_id);
+ALTER TABLE core.fact_order_review
+    ADD FOREIGN KEY (order_id) REFERENCES core.fact_order (order_id);
+ALTER TABLE core.fact_order_review
+    ADD CHECK (review_score BETWEEN 1 AND 5);
+-- <<< sql/40_core_fact/430_fact_order_review.sql
 
 -- >>> sql/60_mart/600_v_sales_month.sql
 -- object : mart.v_sales_month
@@ -166,6 +401,228 @@ COMMENT ON MATERIALIZED VIEW mart.v_sales_month IS
     'Выручка (SUM price, delivered) и число заказов по месяцу оформления; месяцы без заказов = 0';
 -- <<< sql/60_mart/600_v_sales_month.sql
 
+-- >>> sql/60_mart/610_order_summary.sql
+-- object : mart.order_summary
+-- grain  : 1 строка = 1 заказ (все 99 441, все статусы); PK order_id
+-- source : core.fact_order, fact_order_item, fact_order_payment, fact_order_review, dim_customer, dim_order_status
+-- cc     : 775 заказов без позиций, 1 без оплаты, 639 с расхождением оплаты; 8 delivered без даты вручения
+-- why    : каждый поток сначала агрегируется до заказа отдельно — без fan-out (2 товара × 2 оплаты ≠ 4 строки)
+
+CREATE MATERIALIZED VIEW mart.order_summary AS
+WITH items AS (
+    SELECT order_id,
+           COUNT(*)                   AS line_count,
+           SUM(price)                 AS goods_value,
+           SUM(freight_value)         AS freight_value,
+           COUNT(DISTINCT seller_id)  AS seller_count
+    FROM core.fact_order_item
+    GROUP BY order_id
+),
+payments AS (
+    SELECT order_id, COUNT(*) AS payment_count, SUM(payment_value) AS payment_value
+    FROM core.fact_order_payment
+    GROUP BY order_id
+),
+reviews AS (
+    SELECT order_id, COUNT(*) AS review_count, AVG(review_score)::numeric(4, 2) AS review_score_mean
+    FROM core.fact_order_review
+    GROUP BY order_id
+),
+base AS (
+    SELECT
+        o.order_id,
+        o.order_status,
+        s.is_revenue,
+        c.customer_unique_id,
+        c.state_normalized                          AS customer_state,
+        o.purchased_at,
+        date_trunc('month', o.purchased_at)::date   AS purchase_month,
+        o.delivered_customer_at,
+        o.estimated_delivery_at,
+        COALESCE(i.line_count, 0)                   AS line_count,
+        COALESCE(i.seller_count, 0)                 AS seller_count,
+        i.goods_value,
+        i.freight_value,
+        i.goods_value + i.freight_value             AS order_value,
+        COALESCE(p.payment_count, 0)                AS payment_count,
+        p.payment_value,
+        COALESCE(r.review_count, 0)                 AS review_count,
+        r.review_score_mean,
+        i.order_id IS NOT NULL                      AS has_items,
+        p.order_id IS NOT NULL                      AS has_payments
+    FROM core.fact_order o
+    JOIN core.dim_order_status s ON s.order_status = o.order_status
+    LEFT JOIN core.dim_customer c ON c.customer_id = o.customer_id
+    LEFT JOIN items    i ON i.order_id = o.order_id
+    LEFT JOIN payments p ON p.order_id = o.order_id
+    LEFT JOIN reviews  r ON r.order_id = o.order_id
+)
+SELECT
+    b.*,
+    b.payment_value - b.order_value AS payment_delta,
+    CASE
+        WHEN NOT b.has_items AND NOT b.has_payments THEN 'Нет обеих сторон'
+        WHEN NOT b.has_items                        THEN 'Нет позиций'
+        WHEN NOT b.has_payments                     THEN 'Нет оплаты'
+        WHEN b.payment_value = b.order_value        THEN 'Совпадает'
+        ELSE 'Расхождение'
+    END AS reconciliation,
+    EXTRACT(EPOCH FROM b.delivered_customer_at - b.purchased_at) / 86400 AS delivery_days,
+    b.delivered_customer_at::date - b.estimated_delivery_at::date        AS delay_days,
+    (b.order_status = 'delivered' AND b.delivered_customer_at IS NOT NULL
+        AND b.estimated_delivery_at IS NOT NULL
+        AND b.delivered_customer_at >= b.purchased_at)                   AS is_valid_delivery
+FROM base b;
+
+CREATE UNIQUE INDEX ON mart.order_summary (order_id);
+COMMENT ON MATERIALIZED VIEW mart.order_summary IS
+    'Один заказ: суммы позиций/оплат/отзывов, сверка оплаты, срок и опоздание доставки';
+-- <<< sql/60_mart/610_order_summary.sql
+
+-- >>> sql/60_mart/620_sales_marts.sql
+-- object : mart.v_seller_sales, mart.v_category_sales
+-- grain  : продавец; категория (по позициям доставленных заказов)
+-- source : core.fact_order_item, core.fact_order, core.dim_order_status, core.dim_seller, core.dim_product, core.dim_category
+-- cc     : FR-30 выручка = SUM(price) по is_revenue; выручка продавца — только его позиции, не весь чек
+-- why    : гранула позиции: заказ с товарами разных продавцов делится между ними корректно
+
+CREATE MATERIALIZED VIEW mart.v_seller_sales AS
+SELECT
+    i.seller_id,
+    s.city,
+    s.state,
+    COUNT(DISTINCT i.order_id) AS orders,
+    COUNT(*)                   AS units,
+    SUM(i.price)               AS revenue
+FROM core.fact_order_item i
+JOIN core.fact_order o        ON o.order_id = i.order_id
+JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_revenue
+LEFT JOIN core.dim_seller s   ON s.seller_id = i.seller_id
+GROUP BY i.seller_id, s.city, s.state;
+
+CREATE MATERIALIZED VIEW mart.v_category_sales AS
+SELECT
+    c.category_key,
+    c.label,
+    c.is_unknown,
+    SUM(i.price) AS revenue,
+    (100 * SUM(i.price) / SUM(SUM(i.price)) OVER ())::numeric(6, 2) AS share_pct
+FROM core.fact_order_item i
+JOIN core.fact_order o        ON o.order_id = i.order_id
+JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_revenue
+LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
+LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
+GROUP BY c.category_key, c.label, c.is_unknown;
+
+COMMENT ON MATERIALIZED VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';
+COMMENT ON MATERIALIZED VIEW mart.v_category_sales IS 'Выручка и доля категории; unknown — отдельная строка, сумма = общей выручке';
+-- <<< sql/60_mart/620_sales_marts.sql
+
+-- >>> sql/60_mart/630_delivery_marts.sql
+-- object : mart.v_delivery_review
+-- grain  : 1 строка = 1 группа опоздания (В срок / 1–3 / 4–7 / >7 дней)
+-- source : mart.order_summary
+-- cc     : только валидные delivered с отзывом; оценка заказа = среднее его отзывов, затем среднее по заказам
+-- why    : связь опоздания и оценки — наблюдение, не причинный эффект
+
+CREATE VIEW mart.v_delivery_review AS
+WITH g AS (
+    SELECT
+        CASE
+            WHEN delay_days <= 0 THEN 1
+            WHEN delay_days <= 3 THEN 2
+            WHEN delay_days <= 7 THEN 3
+            ELSE 4
+        END AS group_order,
+        review_score_mean
+    FROM mart.order_summary
+    WHERE is_valid_delivery AND review_score_mean IS NOT NULL
+)
+SELECT
+    group_order,
+    (ARRAY['В срок', '1–3 дня', '4–7 дней', 'Более 7 дней'])[group_order] AS delay_group,
+    COUNT(*)                                AS orders,
+    AVG(review_score_mean)::numeric(4, 2)   AS mean_score
+FROM g
+GROUP BY group_order
+ORDER BY group_order;
+-- <<< sql/60_mart/630_delivery_marts.sql
+
+-- >>> sql/60_mart/640_v_kpi.sql
+-- object : mart.v_kpi
+-- grain  : 1 строка = ключевые показатели площадки за весь период
+-- source : mart.order_summary
+-- cc     : средний чек и доли — неаддитивны, считаются на грануле заказа/покупателя, а не суммой срезов
+-- why    : одна точка правды для строки KPI на странице и для слайдов
+
+CREATE VIEW mart.v_kpi AS
+WITH customers AS (
+    SELECT customer_unique_id, COUNT(*) AS orders
+    FROM mart.order_summary
+    GROUP BY customer_unique_id
+)
+SELECT
+    (SELECT SUM(goods_value) FROM mart.order_summary WHERE is_revenue)                    AS revenue,
+    (SELECT COUNT(*) FROM mart.order_summary WHERE is_revenue)                            AS delivered_orders,
+    (SELECT ROUND(SUM(order_value) / COUNT(*), 2) FROM mart.order_summary WHERE is_revenue) AS avg_check,
+    (SELECT COUNT(*) FROM customers)                                                      AS customers,
+    (SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE orders >= 2) / COUNT(*), 2) FROM customers) AS repeat_pct,
+    (SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE delay_days > 0) / COUNT(*), 2)
+       FROM mart.order_summary WHERE is_valid_delivery)                                   AS late_pct,
+    (SELECT ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY delivery_days))::numeric, 1)
+       FROM mart.order_summary WHERE is_valid_delivery)                                   AS median_delivery_days;
+-- <<< sql/60_mart/640_v_kpi.sql
+
+-- >>> sql/70_answers/700_answers_q01_q05.sql
+-- object : mart.q01..q05 — ответы на вопросы аналитиков (docs/tasks.md, блок А)
+-- grain  : по каждому вопросу — своя (месяц / продавец / одна строка / категория)
+-- source : только mart.* и core.* — не raw
+-- cc     : контрольные цифры проверяются в sql/80_dq/810_dq_checks.sql
+-- why    : вопрос = view поверх витрины; новый вопрос добавляется одним view
+
+-- Q1. Выручка и число заказов по месяцам, 2016-09..2018-08 (24 строки, 2016-11 = 0)
+CREATE VIEW mart.q01_revenue_by_month AS
+SELECT month, orders, revenue
+FROM mart.v_sales_month
+WHERE month BETWEEN DATE '2016-09-01' AND DATE '2018-08-01'
+ORDER BY month;
+
+-- Q2. Топ-10 продавцов по выручке — только их позиции
+CREATE VIEW mart.q02_top_sellers AS
+SELECT seller_id, city, state, orders, units, revenue
+FROM mart.v_seller_sales
+ORDER BY revenue DESC, seller_id
+LIMIT 10;
+
+-- Q3. Средний чек — на уровне заказа (товар + доставка), плюс строки и единицы на заказ
+CREATE VIEW mart.q03_avg_check AS
+SELECT
+    ROUND(SUM(order_value) / COUNT(*), 2)  AS avg_check,
+    ROUND(AVG(line_count), 4)              AS avg_lines,
+    ROUND(AVG(line_count), 4)              AS avg_units
+FROM mart.order_summary
+WHERE is_revenue;
+
+-- Q4. Покупатели (customer_unique_id) и доля вернувшихся за второй покупкой
+CREATE VIEW mart.q04_repeat_customers AS
+WITH c AS (
+    SELECT customer_unique_id, COUNT(*) AS orders
+    FROM mart.order_summary
+    GROUP BY customer_unique_id
+)
+SELECT
+    COUNT(*)                                                        AS customers,
+    COUNT(*) FILTER (WHERE orders >= 2)                             AS returned,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE orders >= 2) / COUNT(*), 2) AS returned_pct
+FROM c;
+
+-- Q5. Выручка по категориям с долей; unknown — отдельная категория, сумма = общей выручке
+CREATE VIEW mart.q05_revenue_by_category AS
+SELECT label AS category, revenue, share_pct
+FROM mart.v_category_sales
+ORDER BY revenue DESC;
+-- <<< sql/70_answers/700_answers_q01_q05.sql
+
 -- >>> sql/80_dq/800_dq_framework.sql
 -- object : mart.dq_result, mart.build_info
 -- grain  : dq_result — 1 строка = 1 проверка; build_info — 1 строка на сборку
@@ -186,37 +643,102 @@ CREATE TABLE mart.build_info AS
 SELECT now() AS built_at;
 -- <<< sql/80_dq/800_dq_framework.sql
 
+-- >>> sql/80_dq/805_dq_marts.sql
+-- object : mart.v_layer_rows, mart.v_raw_missingness
+-- grain  : таблица источника; колонка источника
+-- source : raw.*, core.*
+-- cc     : строки не теряются между raw и core; пропуски в raw сохраняются, а не «лечатся»
+-- why    : самопроверка видна на странице, а не только в логе сборки
+
+CREATE VIEW mart.v_layer_rows AS
+SELECT * FROM (VALUES
+    ('orders',              (SELECT COUNT(*) FROM raw.orders),                       (SELECT COUNT(*) FROM core.fact_order)),
+    ('order_items',         (SELECT COUNT(*) FROM raw.order_items),                  (SELECT COUNT(*) FROM core.fact_order_item)),
+    ('order_payments',      (SELECT COUNT(*) FROM raw.order_payments),               (SELECT COUNT(*) FROM core.fact_order_payment)),
+    ('order_reviews',       (SELECT COUNT(*) FROM raw.order_reviews),                (SELECT COUNT(*) FROM core.fact_order_review)),
+    ('products',            (SELECT COUNT(*) FROM raw.products),                     (SELECT COUNT(*) FROM core.dim_product)),
+    ('sellers',             (SELECT COUNT(*) FROM raw.sellers),                      (SELECT COUNT(*) FROM core.dim_seller)),
+    ('customers',           (SELECT COUNT(*) FROM raw.customers),                    (SELECT COUNT(*) FROM core.dim_customer)),
+    ('category_translation',(SELECT COUNT(*) FROM raw.product_category_translation), (SELECT COUNT(*) FROM stg.category_translation))
+) AS t(source_table, raw_rows, model_rows);
+
+-- пропуски по каждой колонке raw: строки разворачиваются в пары (колонка, значение) через jsonb
+CREATE MATERIALIZED VIEW mart.v_raw_missingness AS
+WITH cells AS (
+    SELECT 'orders' AS source_table, j.key, j.value FROM raw.orders t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'order_items', j.key, j.value FROM raw.order_items t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'order_payments', j.key, j.value FROM raw.order_payments t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'order_reviews', j.key, j.value FROM raw.order_reviews t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'products', j.key, j.value FROM raw.products t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'sellers', j.key, j.value FROM raw.sellers t, jsonb_each_text(to_jsonb(t)) j
+    UNION ALL SELECT 'customers', j.key, j.value FROM raw.customers t, jsonb_each_text(to_jsonb(t)) j
+)
+SELECT
+    source_table,
+    key AS column_name,
+    COUNT(*) FILTER (WHERE NULLIF(TRIM(value), '') IS NULL) AS missing,
+    (100.0 * COUNT(*) FILTER (WHERE NULLIF(TRIM(value), '') IS NULL) / COUNT(*))::numeric(5, 2) AS missing_pct
+FROM cells
+WHERE key NOT IN ('_source_file', '_loaded_at')
+GROUP BY source_table, key;
+-- <<< sql/80_dq/805_dq_marts.sql
+
 -- >>> sql/80_dq/810_dq_checks.sql
 -- object : проверки DQ (наполнение mart.dq_result)
 -- grain  : 1 INSERT = 1 проверка
 -- source : raw.*, core.*, mart.*
--- cc     : DQ-xx из ТЗ §9; контроль Q1 из tasks.md
--- why    : новая проверка = новый INSERT по этому же шаблону
+-- cc     : DQ-xx из ТЗ §9; контроли Q1–Q5 из tasks.md; инварианты EDA-ноутбука (notebooks/01_*)
+-- why    : новая проверка = новая строка в VALUES по этому же шаблону
 
+-- 1. Полнота: ни одна строка raw не потеряна в модели
 INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
-SELECT 'DQ-01', 'fact_order: строк столько же, сколько в raw.orders',
-       (SELECT COUNT(*) FROM raw.orders)::text, COUNT(*)::text,
-       COUNT(*) = (SELECT COUNT(*) FROM raw.orders)
-FROM core.fact_order;
+SELECT 'DQ-01-' || source_table, 'строк в модели столько же, сколько в raw.' || source_table,
+       raw_rows::text, model_rows::text, raw_rows = model_rows
+FROM mart.v_layer_rows;
 
+-- 2. Инварианты данных и контроли вопросов
 INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
-SELECT 'DQ-02', 'fact_order_item: строк столько же, сколько в raw.order_items',
-       (SELECT COUNT(*) FROM raw.order_items)::text, COUNT(*)::text,
-       COUNT(*) = (SELECT COUNT(*) FROM raw.order_items)
-FROM core.fact_order_item;
-
-INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
-SELECT 'DQ-03', 'fact_order: нет статусов unknown',
-       '0', COUNT(*)::text, COUNT(*) = 0
-FROM core.fact_order
-WHERE order_status = 'unknown';
-
-INSERT INTO mart.dq_result (check_id, description, expected, actual, passed)
-SELECT 'Q1-CTRL', 'Q1: 24 месяца 2016-09..2018-08, итого выручка 13 221 498.11',
-       '24 / 13221498.11', COUNT(*) || ' / ' || SUM(revenue),
-       COUNT(*) = 24 AND SUM(revenue) = 13221498.11
-FROM mart.v_sales_month
-WHERE month BETWEEN DATE '2016-09-01' AND DATE '2018-08-01';
+SELECT check_id, description, expected, actual, expected = actual
+FROM (VALUES
+    ('DQ-02', 'нет статусов unknown',
+     '0', (SELECT COUNT(*)::text FROM core.fact_order WHERE order_status = 'unknown')),
+    ('DQ-03', 'заказов без позиций (сохраняются, не удаляются)',
+     '775', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_items)),
+    ('DQ-04', 'заказов без оплаты',
+     '1', (SELECT COUNT(*)::text FROM mart.order_summary WHERE NOT has_payments)),
+    ('DQ-05', 'заказов с несколькими отзывами (все отзывы сохранены)',
+     '547', (SELECT COUNT(*)::text FROM mart.order_summary WHERE review_count > 1)),
+    ('DQ-06', 'товаров без категории → __unknown__',
+     '610', (SELECT COUNT(*)::text FROM core.dim_product WHERE is_missing_category)),
+    ('DQ-07', 'категорий без перевода',
+     '2', (SELECT COUNT(*)::text FROM core.dim_category WHERE is_untranslated)),
+    ('DQ-08', 'расхождений оплаты: всего / больше копейки',
+     '639 / 366', (SELECT COUNT(*) FILTER (WHERE reconciliation = 'Расхождение') || ' / '
+                       || COUNT(*) FILTER (WHERE ABS(payment_delta) > 0.01) FROM mart.order_summary)),
+    ('DQ-09', 'delivered без даты вручения (в продажах есть, в сроках нет)',
+     '8', (SELECT COUNT(*)::text FROM mart.order_summary WHERE order_status = 'delivered' AND delivered_customer_at IS NULL)),
+    ('DQ-10', 'сумма позиций по заказам = сумме позиций',
+     (SELECT SUM(price)::text FROM core.fact_order_item), (SELECT SUM(goods_value)::text FROM mart.order_summary)),
+    ('DQ-11', 'сумма оплат по заказам = сумме оплат',
+     (SELECT SUM(payment_value)::text FROM core.fact_order_payment), (SELECT SUM(payment_value)::text FROM mart.order_summary)),
+    ('DQ-12', 'выручка: по продавцам = по категориям = по месяцам',
+     (SELECT SUM(revenue)::text FROM mart.v_sales_month),
+     (SELECT CASE WHEN (SELECT SUM(revenue) FROM mart.v_seller_sales) = (SELECT SUM(revenue) FROM mart.v_category_sales)
+                  THEN (SELECT SUM(revenue)::text FROM mart.v_seller_sales) ELSE 'не сходится' END)),
+    ('Q1-CTRL', 'Q1: 24 месяца, итого выручка',
+     '24 / 13221498.11', (SELECT COUNT(*) || ' / ' || SUM(revenue) FROM mart.q01_revenue_by_month)),
+    ('Q1-ZERO', 'Q1: один месяц без выручки — 2016-11',
+     '2016-11-01', (SELECT string_agg(month::text, ',') FROM mart.q01_revenue_by_month WHERE revenue = 0)),
+    ('Q2-CTRL', 'Q2: выручка первого продавца',
+     '226987.93', (SELECT revenue::text FROM mart.q02_top_sellers LIMIT 1)),
+    ('Q3-CTRL', 'Q3: средний чек заказа',
+     '159.88', (SELECT avg_check::text FROM mart.q03_avg_check)),
+    ('Q4-CTRL', 'Q4: покупателей / вернулись, %',
+     '96096 / 3.12', (SELECT customers || ' / ' || returned_pct FROM mart.q04_repeat_customers)),
+    ('Q5-CTRL', 'Q5: категорий / у крупнейшей / сумма',
+     '74 / 1233131.72 / 13221498.11',
+     (SELECT COUNT(*) || ' / ' || MAX(revenue) || ' / ' || SUM(revenue) FROM mart.q05_revenue_by_category))
+) AS t(check_id, description, expected, actual);
 -- <<< sql/80_dq/810_dq_checks.sql
 
 -- >>> sql/80_dq/890_dq_run.sql

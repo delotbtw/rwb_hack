@@ -5,52 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Capibara: дашборд</title>
   <style>
-    :root { --bg: #f8fafc; --card: #fff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0; }
+    :root { --bg: #f8fafc; --card: #fff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0; --ok: #15803d; --bad: #b91c1c; }
     body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
-    header { padding: 24px 16px 8px; max-width: 1200px; margin: 0 auto; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+    header { padding-top: 24px; }
     h1 { margin: 0; font-size: 22px; }
     .meta { color: var(--muted); font-size: 13px; }
-    main { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 16px;
-           padding: 16px; max-width: 1200px; margin: 0 auto; }
-    @media (max-width: 560px) { main { grid-template-columns: 1fr; } }
+    .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--bad); font-weight: 600; }
+    .kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 16px 0 4px; }
+    .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .tile b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+    .tile span { color: var(--muted); font-size: 12px; }
+    h2.section { font-size: 18px; margin: 28px 0 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 16px; padding: 12px 0; }
+    @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
     figure { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-    figure h2 { margin: 0 0 8px; font-size: 16px; }
+    figure h3 { margin: 0 0 8px; font-size: 16px; }
     img { width: 100%; height: auto; display: block; }
     figcaption { color: var(--muted); margin-top: 8px; font-size: 14px; }
-    .section { max-width: 1200px; margin: 16px auto 0; padding: 0 16px; font-size: 15px; color: var(--muted); font-weight: 600; }
+    details { margin: 28px 0 32px; } summary { cursor: pointer; font-size: 16px; font-weight: 600; }
   </style>
 </head>
 <body>
+<div class="wrap">
   <header>
     <h1>Capibara: маркетплейс 2016–2018</h1>
-    <div class="meta">Сборка модели: {{ version }} · графиков из mart: {{ charts|length }} · из ноутбука: {{ notebook_charts|length }}</div>
+    <div class="meta">
+      Всё считается SQL-моделью из mart · сборка: {{ version }}
+      {% if kpi %} · проверки данных:
+        <span class="{{ 'ok' if kpi.dq_passed == kpi.dq_total else 'bad' }}">{{ kpi.dq_passed }} из {{ kpi.dq_total }} пройдены</span>
+      {% endif %}
+    </div>
   </header>
-  {% if charts %}
-  <h3 class="section">Из модели (mart), рисуются по запросу</h3>
-  <main>
+
+  {% if kpi %}
+  <section class="kpi">
+    {% for label, value, hint in kpi.tiles %}
+    <div class="tile"><span>{{ label }}</span><b>{{ value }}</b><span>{{ hint }}</span></div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% for section, charts in sections %}
+  <h2 class="section">{{ section }}</h2>
+  <div class="grid">
     {% for c in charts %}
     <figure id="{{ c.id }}">
-      <h2>{{ c.title }}</h2>
+      <h3>{{ c.title }}</h3>
       <img src="/chart/{{ c.id }}.png" alt="{{ c.title }}" loading="lazy">
       <figcaption>{{ c.caption }}</figcaption>
     </figure>
     {% endfor %}
-  </main>
-  {% endif %}
+  </div>
+  {% endfor %}
+
   {% if notebook_charts %}
-  <h3 class="section">Из ноутбука (EDA)</h3>
-  <main>
-    {% for c in notebook_charts %}
-    <figure id="{{ c.id }}">
-      <h2>{{ c.title }}</h2>
-      <img src="{{ c.src }}" alt="{{ c.title }}" loading="lazy">
-      <figcaption>{{ c.caption }}</figcaption>
-    </figure>
-    {% endfor %}
-  </main>
+  <details>
+    <summary>Эталон: те же графики из EDA-ноутбука (pandas по CSV, для сверки) · {{ notebook_charts|length }}</summary>
+    <div class="grid">
+      {% for c in notebook_charts %}
+      <figure id="{{ c.id }}">
+        <h3>{{ c.title }}</h3>
+        <img src="{{ c.src }}" alt="{{ c.title }}" loading="lazy">
+        <figcaption>{{ c.caption }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+  </details>
   {% endif %}
-  {% if not charts and not notebook_charts %}
-  <main><p>Графиков пока нет: положите ноутбук в notebooks/ и выполните make notebook.</p></main>
-  {% endif %}
+</div>
 </body>
 </html>

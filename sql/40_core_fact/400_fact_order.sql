@@ -1,6 +1,6 @@
 -- object : core.fact_order
 -- grain  : 1 строка = 1 заказ; PK order_id
--- source : stg.orders, core.dim_order_status
+-- source : stg.orders, core.dim_order_status, core.dim_customer
 -- cc     : неизвестный статус → 'unknown' (unknown-member), строка не теряется
 -- why    : заказ — отдельный факт, позиции не смешиваются с ним по грануле
 
@@ -20,3 +20,5 @@ LEFT JOIN core.dim_order_status s ON s.order_status = o.order_status;
 ALTER TABLE core.fact_order ADD PRIMARY KEY (order_id);
 ALTER TABLE core.fact_order
     ADD FOREIGN KEY (order_status) REFERENCES core.dim_order_status (order_status);
+ALTER TABLE core.fact_order
+    ADD FOREIGN KEY (customer_id) REFERENCES core.dim_customer (customer_id);

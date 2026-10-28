@@ -25,8 +25,8 @@ from fastapi.templating import Jinja2Templates  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 import app.charts  # noqa: E402,F401  регистрирует все графики
-from app.db import build_version, connect  # noqa: E402
-from app.registry import REGISTRY, ordered  # noqa: E402
+from app.db import build_version, connect, query_df  # noqa: E402
+from app.registry import REGISTRY, by_section  # noqa: E402
 
 HERE = pathlib.Path(__file__).parent
 STATIC = HERE / "static"
@@ -58,6 +58,35 @@ def _error_png(chart_id: str, err: Exception) -> bytes:
     return _to_png(fig)
 
 
+def _fmt(value, kind: str) -> str:
+    if value is None:
+        return "—"
+    if kind == "money":
+        return f"{float(value):,.2f}".replace(",", " ")
+    if kind == "int":
+        return f"{int(value):,}".replace(",", " ")
+    if kind == "pct":
+        return f"{float(value):.2f} %"
+    return f"{float(value):.1f}"
+
+
+@lru_cache(maxsize=8)
+def _kpi(version: str) -> dict:
+    """Строка KPI из mart.v_kpi и сводка DQ — тоже кэшируются до следующей сборки."""
+    with connect() as conn:
+        k = query_df(conn, "SELECT * FROM mart.v_kpi").iloc[0]
+        dq = query_df(conn, "SELECT count(*) AS total, count(*) FILTER (WHERE passed) AS passed FROM mart.dq_result").iloc[0]
+    tiles = [
+        ("Выручка, BRL", _fmt(k.revenue, "money"), "Σ price доставленных заказов"),
+        ("Доставленных заказов", _fmt(k.delivered_orders, "int"), "статус delivered"),
+        ("Средний чек, BRL", _fmt(k.avg_check, "money"), "товар + доставка, на заказ"),
+        ("Покупателей", _fmt(k.customers, "int"), "по customer_unique_id"),
+        ("Вернулись", _fmt(k.repeat_pct, "pct"), "2+ заказа"),
+        ("Опоздали", _fmt(k.late_pct, "pct"), f"медиана доставки {_fmt(k.median_delivery_days, 'num')} дн"),
+    ]
+    return {"tiles": tiles, "dq_total": int(dq.total), "dq_passed": int(dq.passed)}
+
+
 @lru_cache(maxsize=256)
 def _render(chart_id: str, version: str) -> bytes:
     with connect() as conn:
@@ -66,14 +95,17 @@ def _render(chart_id: str, version: str) -> bytes:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    kpi = None
     try:
         with connect() as conn:
             version = build_version(conn)
-    except Exception as e:  # база недоступна — страница всё равно открывается
-        version = f"база недоступна: {e}"
+        kpi = _kpi(version)
+    except Exception as e:  # база или модель недоступна — страница всё равно открывается
+        traceback.print_exc()
+        version = f"модель недоступна: {e}"
     return templates.TemplateResponse(
         request, "index.html",
-        {"charts": ordered(), "notebook_charts": notebook_charts(), "version": version},
+        {"sections": by_section(), "notebook_charts": notebook_charts(), "version": version, "kpi": kpi},
     )
 
 

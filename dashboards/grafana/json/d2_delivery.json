@@ -1,0 +1,1286 @@
+{
+  "uid": "capibara-d2",
+  "title": "D2. Доставка",
+  "description": "Срок доставки, опоздания, оценки, маршруты и продавцы (mart.v_delivery, mart.v_delivery_item).",
+  "tags": [
+    "capibara",
+    "delivery"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "2016-09-01T00:00:00.000Z",
+    "to": "2018-11-01T00:00:00.000Z"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "customer_state",
+        "label": "Штат покупателя",
+        "description": "Штат покупателя; All включает заказы без штата",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT customer_state FROM mart.v_delivery WHERE customer_state IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT customer_state FROM mart.v_delivery WHERE customer_state IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "seller_state",
+        "label": "Штат продавца",
+        "description": "Штат основного продавца заказа (для таблицы продавцов — штат продавца позиции); All включает записи без штата",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT seller_state_main FROM mart.v_delivery WHERE seller_state_main IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT seller_state_main FROM mart.v_delivery WHERE seller_state_main IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "category",
+        "label": "Категория",
+        "description": "Основная категория заказа; All включает заказы без категории; на таблицу продавцов не действует",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT category_main FROM mart.v_delivery WHERE category_main IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT category_main FROM mart.v_delivery WHERE category_main IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "В срок",
+      "description": "Доля доставленных заказов, пришедших не позже обещанной даты: COUNT(is_on_time) / COUNT(has_valid_dates) (metric_catalog.late_pct = 100 % минус это значение). Заказы с невалидными датами исключены. Срезы: период, штаты покупателя и продавца, категория.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_on_time)::numeric / NULLIF(COUNT(*) FILTER (WHERE has_valid_dates), 0) AS on_time_share\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Медиана срока",
+      "description": "Медианный срок доставки от покупки до вручения, дни (metric_catalog.median_delivery_days). Только заказы с валидными датами. Неаддитивная метрика, считается на срезе.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 3,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE has_valid_dates))::numeric, 1) AS median_delivery_days\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "p90 срока",
+      "description": "90-й перцентиль срока доставки, дни: percentile_cont(0.9) по delivery_days для заказов с валидными датами. 9 из 10 заказов доставлены не позже этого значения.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ROUND((percentile_cont(0.9) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE has_valid_dates))::numeric, 1) AS p90_delivery_days\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Опоздание (среднее)",
+      "description": "Среднее опоздание среди опоздавших заказов, дни: AVG(delay_days) для is_late. Заказы, пришедшие в срок, в расчёт не входят.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ROUND((AVG(delay_days) FILTER (WHERE is_late))::numeric, 1) AS avg_delay_days\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Средняя оценка",
+      "description": "Средняя оценка отзыва по доставленным заказам, 1–5 (metric_catalog.avg_review_score): AVG(review_score_mean) по заказам с отзывом.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT ROUND(AVG(review_score_mean), 2) AS avg_review_score\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Оценки 1–2★",
+      "description": "Доля заказов с низкой оценкой: COUNT(review_score_mean <= 2) / COUNT(review_score_mean). Оценка заказа — средняя по его отзывам; заказы без отзыва в расчёт не входят.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE review_score_mean <= 2)::numeric / NULLIF(COUNT(review_score_mean), 0) AS low_score_share\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "red"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Заказов",
+      "description": "Число доставленных заказов на текущем срезе (metric_catalog.orders_delivered): знаменатель для остальных показателей, включая заказы с невалидными датами.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS orders_delivered\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Исключено из расчёта",
+      "description": "Доставленные заказы без валидных дат (has_valid_dates = FALSE): у них срок и опоздание не рассчитываются, в показатели доставки они не входят. Значения в источнике не правятся.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE NOT has_valid_dates) AS excluded_orders\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "yellow"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Доля в срок и срок доставки по месяцам",
+      "description": "По месяцу покупки: доля заказов в срок (левая ось), медиана и p90 срока доставки в днях (правая ось). Доли и перцентили неаддитивны: на каждом месяце считаются заново по заказам среза.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 14,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  purchase_month::timestamp AS time,\n  COUNT(*) FILTER (WHERE is_on_time)::numeric / NULLIF(COUNT(*) FILTER (WHERE has_valid_dates), 0) AS \"Доля в срок\",\n  (percentile_cont(0.5) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE has_valid_dates))::numeric AS \"Медиана срока, дн\",\n  (percentile_cont(0.9) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE has_valid_dates))::numeric AS \"p90 срока, дн\"\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))\nGROUP BY purchase_month\nORDER BY purchase_month"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Доля в срок"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Медиана срока, дн"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: дн"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90 срока, дн"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: дн"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisSoftMin",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Оценка по величине опоздания",
+      "description": "Средняя оценка заказов по корзинам опоздания: в срок, 1–3 дня, 4–7 дней, более 7 дней (late_bucket). Чем больше опоздание, тем ниже оценка. Заказы без валидных дат в корзины не попадают.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 4,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  CASE late_bucket\n    WHEN 'on_time' THEN 'В срок'\n    WHEN '1-3' THEN '1–3 дня'\n    WHEN '4-7' THEN '4–7 дней'\n    ELSE 'Более 7 дней' END AS \"Опоздание\",\n  ROUND(AVG(review_score_mean), 2) AS \"Средняя оценка\"\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))\n  AND late_bucket IS NOT NULL\nGROUP BY late_bucket\nORDER BY CASE late_bucket WHEN 'on_time' THEN 1 WHEN '1-3' THEN 2 WHEN '4-7' THEN 3 ELSE 4 END"
+        }
+      ],
+      "options": {
+        "orientation": "vertical",
+        "xField": "Опоздание",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "always",
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "min": 0,
+          "max": 5,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Маршруты: средний срок доставки, дни",
+      "description": "Матрица маршрутов: строки — штат покупателя, столбцы — штат основного продавца заказа (по наибольшей Σ price), значение — средний срок доставки в днях. Показаны маршруты минимум с 30 заказами; пустая ячейка — маршрут не набрал 30 заказов на текущем срезе. Экспорт: Inspect → Data → CSV.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  customer_state AS \"Штат покупателя\",\n  seller_state_main AS \"Штат продавца\",\n  ROUND((AVG(delivery_days) FILTER (WHERE has_valid_dates))::numeric, 1) AS \"Средний срок, дн\"\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))\n  AND customer_state IS NOT NULL\n  AND seller_state_main IS NOT NULL\nGROUP BY customer_state, seller_state_main\nHAVING COUNT(*) >= 30\nORDER BY 1, 2"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: дн",
+          "decimals": 1,
+          "noValue": "",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 12
+              },
+              {
+                "color": "orange",
+                "value": 18
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "custom": {
+            "align": "center",
+            "cellOptions": {
+              "type": "color-background",
+              "mode": "basic"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "Штат продавца",
+            "rowField": "Штат покупателя",
+            "valueField": "Средний срок, дн",
+            "emptyValue": "null"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Заказы и оценка по корзинам опоздания",
+      "description": "По корзинам late_bucket: число заказов, число заказов с отзывом, доля корзины среди заказов с валидными датами (неаддитивно, пересчитывается на срезе) и средняя оценка. При полном периоде «Заказы с оценкой» = 89 443 / 1 852 / 1 748 / 2 781, как в mart.v_delivery_review.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  CASE late_bucket\n    WHEN 'on_time' THEN 'В срок'\n    WHEN '1-3' THEN '1–3 дня'\n    WHEN '4-7' THEN '4–7 дней'\n    ELSE 'Более 7 дней' END AS \"Опоздание\",\n  COUNT(*) AS \"Заказы\",\n  COUNT(review_score_mean) AS \"Заказы с оценкой\",\n  COUNT(*)::numeric / NULLIF(SUM(COUNT(*)) OVER (), 0) AS \"Доля заказов\",\n  ROUND(AVG(review_score_mean), 2) AS \"Средняя оценка\"\nFROM (SELECT * FROM mart.v_delivery OFFSET 0) AS v\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state_main IN ($seller_state))\n  AND ('*' IN ($category) OR category_main IN ($category))\n  AND late_bucket IS NOT NULL\nGROUP BY late_bucket\nORDER BY CASE late_bucket WHEN 'on_time' THEN 1 WHEN '1-3' THEN 2 WHEN '4-7' THEN 3 ELSE 4 END"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Заказы"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Заказы с оценкой"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Доля заказов"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Средняя оценка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Продавцы: просрочка передачи перевозчику (без среза по категории)",
+      "description": "20 продавцов с наибольшей долей позиций, переданных перевозчику позже shipping_limit (is_shipped_late), минимум 20 позиций. «Ср. задержка» — среднее опоздание только по просроченным позициям. Источник mart.v_delivery_item (без категории): учитываются период, штаты покупателя и продавца. Экспорт: Inspect → Data → CSV.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 24,
+        "w": 14,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  seller_id AS \"Продавец\",\n  seller_state AS \"Штат\",\n  COUNT(*) AS \"Позиции\",\n  COUNT(*) FILTER (WHERE is_shipped_late)::numeric / NULLIF(COUNT(*) FILTER (WHERE is_shipped_late IS NOT NULL), 0) AS \"Передано позже срока\",\n  ROUND((AVG(ship_delay_days) FILTER (WHERE is_shipped_late))::numeric, 1) AS \"Ср. задержка, дн\",\n  ROUND(AVG(review_score_mean), 2) AS \"Средняя оценка\"\nFROM mart.v_delivery_item\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($seller_state) OR seller_state IN ($seller_state))\nGROUP BY seller_id, seller_state\nHAVING COUNT(*) >= 20\nORDER BY 4 DESC NULLS LAST, 3 DESC\nLIMIT 20"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Продавец"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 290
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Штат"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Позиции"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Передано позже срока"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ср. задержка, дн"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: дн"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Средняя оценка"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Определения",
+      "description": "Формулы метрик дословно из mart.metric_catalog.formula_sql; строки «(панель)» — показатели дашборда, которых нет в каталоге. Корзины опоздания: в срок — delay_days ≤ 0, 1–3 дня, 4–7 дней, более 7 дней. Заказ без валидных дат (has_valid_dates = FALSE) в показатели доставки не входит. Срез по продавцу и категории — по основному продавцу и основной категории заказа (наибольшая Σ price).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT name AS \"Метрика\", formula_sql AS \"Формула\", source_view AS \"Источник\", unit AS \"Единица\",\n  CASE WHEN is_additive THEN 'аддитивная' ELSE 'неаддитивная' END AS \"Тип\"\nFROM mart.metric_catalog\nWHERE metric_code IN ('late_pct', 'median_delivery_days', 'avg_delivery_days', 'avg_review_score', 'orders_delivered')\nUNION ALL\nSELECT * FROM (VALUES\n  ('В срок (панель)', 'COUNT(*) FILTER (WHERE is_on_time) / NULLIF(COUNT(*) FILTER (WHERE has_valid_dates), 0)', 'mart.v_delivery', 'share', 'неаддитивная'),\n  ('p90 срока (панель)', 'percentile_cont(0.9) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE has_valid_dates)', 'mart.v_delivery', 'days', 'неаддитивная'),\n  ('Опоздание среднее (панель)', 'AVG(delay_days) FILTER (WHERE is_late)', 'mart.v_delivery', 'days', 'неаддитивная'),\n  ('Оценки 1–2★ (панель)', 'COUNT(*) FILTER (WHERE review_score_mean <= 2) / NULLIF(COUNT(review_score_mean), 0)', 'mart.v_delivery', 'share', 'неаддитивная'),\n  ('Передано позже срока (панель)', 'COUNT(*) FILTER (WHERE is_shipped_late) / NULLIF(COUNT(*) FILTER (WHERE is_shipped_late IS NOT NULL), 0)', 'mart.v_delivery_item', 'share', 'неаддитивная')\n) AS t(\"Метрика\", \"Формула\", \"Источник\", \"Единица\", \"Тип\")\nORDER BY 3, 1"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Метрика"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Формула"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 620
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Источник"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Единица"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

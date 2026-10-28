@@ -25,11 +25,9 @@ SELECT
     c.is_unknown,
     SUM(i.price) AS revenue,
     (100 * SUM(i.price) / SUM(SUM(i.price)) OVER ())::numeric(6, 2) AS share_pct
-FROM core.fact_order_item i
-JOIN core.fact_order o        ON o.order_id = i.order_id
-JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_revenue
-LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
-LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
+FROM mart.v_sales_item i
+LEFT JOIN core.dim_category c ON c.category_key = i.category_key
+WHERE i.is_revenue
 GROUP BY c.category_key, c.label, c.is_unknown;
 
 COMMENT ON VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';

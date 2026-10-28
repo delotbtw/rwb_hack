@@ -43,7 +43,9 @@
         "payment.captured",
         "order.status_changed",
         "review.posted",
-        "replay.completed"
+        "replay.completed",
+        "product.category_changed",
+        "customer.address_changed"
       ]
     },
     "order_id": {
@@ -183,6 +185,50 @@
           },
           "payload": {
             "$ref": "replay.completed.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "product.category_changed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "null"
+          },
+          "payload": {
+            "$ref": "product.category_changed.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "customer.address_changed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "null"
+          },
+          "payload": {
+            "$ref": "customer.address_changed.json"
           }
         }
       }

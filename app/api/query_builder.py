@@ -37,7 +37,13 @@ log = logging.getLogger("app.api")
 SOURCE_VIEW_RE = re.compile(r"^mart\.[a-z_]+$")
 COLUMN_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
-TIME_COLUMN = {"mart.v_sales_item": "purchase_ts", "mart.order_summary": "purchased_at"}
+TIME_COLUMN = {
+    "mart.v_sales_item": "purchase_ts",
+    "mart.order_summary": "purchased_at",
+    "mart.v_product_price_item": "purchase_ts",
+    "mart.v_payment_context": "purchase_ts",
+    "mart.v_review_delivery": "purchased_at",
+}
 MONTH_DIM = "month"
 GRAIN_SQL = {"day": "day", "week": "week"}
 SORT_SQL = {"asc": sql.SQL("ASC"), "desc": sql.SQL("DESC")}

@@ -1,0 +1,361 @@
+{
+  "uid": "capibara-extension",
+  "title": "Capibara — Q6–Q10",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "capibara"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Q6. Наблюдаемые цены выбранного товара",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT * FROM mart.v_product_price_history ORDER BY purchase_date,price",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 2,
+      "title": "Q6. Цены по продавцам",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT product_id,purchase_ts::date AS day,seller_id,price,COUNT(*) AS units FROM mart.v_product_price_item WHERE product_id = (SELECT product_id FROM mart.v_product_price_history LIMIT 1) GROUP BY product_id,purchase_ts::date,seller_id,price ORDER BY day,seller_id,price",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "Q7. Доставка: штаты с ≥500 валидными заказами",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT * FROM mart.v_delivery_by_state WHERE valid_orders >= 500 ORDER BY customer_state",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Q7. Покрытие всех штатов",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT * FROM mart.v_delivery_by_state ORDER BY customer_state",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 5,
+      "title": "Q8. Распределение итоговых статусов",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT * FROM mart.v_order_status_snapshot ORDER BY orders DESC",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "Q9. Оплаты по штатам за 2018 год",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT customer_state,COUNT(*) AS payment_count,SUM(payment_value) AS amount,AVG(payment_installments) AS mean_installments FROM mart.v_payment_context WHERE purchase_ts >= '2018-01-01' AND purchase_ts < '2019-01-01' GROUP BY customer_state ORDER BY customer_state",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 7,
+      "title": "Q9. Способы оплаты, весь период",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT payment_type,COUNT(*) AS payment_count,SUM(payment_value) AS amount,AVG(payment_installments) AS mean_installments FROM mart.v_payment_context GROUP BY payment_type ORDER BY payment_type",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "title": "Q9. Способы оплаты, 2018",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT payment_type,COUNT(*) AS payment_count,SUM(payment_value) AS amount,AVG(payment_installments) AS mean_installments FROM mart.v_payment_context WHERE purchase_ts >= '2018-01-01' AND purchase_ts < '2019-01-01' GROUP BY payment_type ORDER BY payment_type",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "title": "Q10. Выбранная оценка и доставка",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 24,
+        "h": 10
+      },
+      "description": "Полный доступный набор модели с учётом cutoff сборки. Временной фильтр Grafana не применяется; период указан в заголовке. Q6 — наблюдаемые цены, Q8 — снимок статусов; Q10 — один последний выбранный отзыв, не NPS.",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT * FROM mart.v_review_delivery_summary ORDER BY score",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "2016-09-01T00:00:00Z",
+    "to": "2018-11-01T00:00:00Z"
+  }
+}

@@ -18,11 +18,9 @@ WITH seller_pick AS (
 category_pick AS (
     SELECT DISTINCT ON (order_id) order_id, category_label
     FROM (
-        SELECT i.order_id, c.label AS category_label, SUM(i.price) AS price_sum
-        FROM core.fact_order_item i
-        LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
-        LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
-        GROUP BY i.order_id, c.label
+        SELECT i.order_id, i.category_label, SUM(i.price) AS price_sum
+        FROM mart.v_sales_item i
+        GROUP BY i.order_id, i.category_label
     ) t
     ORDER BY order_id, price_sum DESC NULLS LAST, category_label
 )

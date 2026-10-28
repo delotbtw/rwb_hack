@@ -27,6 +27,7 @@ from matplotlib.figure import Figure  # noqa: E402
 import app.charts  # noqa: E402,F401  регистрирует все графики
 from app.api import router as api_router  # noqa: E402
 from app.api.errors import register_handlers  # noqa: E402
+from app.charts.extension import load_tables  # noqa: E402
 from app.db import build_version, connect, query_df  # noqa: E402
 from app.registry import REGISTRY, by_section  # noqa: E402
 
@@ -107,9 +108,18 @@ def index(request: Request):
     except Exception as e:  # база или модель недоступна — страница всё равно открывается
         traceback.print_exc()
         version = f"модель недоступна: {e}"
+    extension_tables = []
+    extension_error = False
+    try:
+        with connect() as conn:
+            extension_tables = load_tables(conn)
+    except Exception:
+        traceback.print_exc()
+        extension_error = True
     return templates.TemplateResponse(
         request, "index.html",
-        {"sections": by_section(), "notebook_charts": notebook_charts(), "version": version, "kpi": kpi},
+        {"sections": by_section(), "notebook_charts": notebook_charts(), "version": version, "kpi": kpi,
+         "extension_tables": extension_tables, "extension_error": extension_error},
     )
 
 

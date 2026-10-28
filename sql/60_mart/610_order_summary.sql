@@ -29,8 +29,8 @@ base AS (
         o.order_id,
         o.order_status,
         s.is_revenue,
-        c.customer_unique_id,
-        c.state_normalized                          AS customer_state,
+        CASE WHEN addr.order_id IS NOT NULL THEN addr.customer_unique_id ELSE c.customer_unique_id END AS customer_unique_id,
+        CASE WHEN addr.order_id IS NOT NULL THEN UPPER(NULLIF(TRIM(addr.state), '')) ELSE c.state_normalized END AS customer_state,
         o.purchased_at,
         date_trunc('month', o.purchased_at)::date   AS purchase_month,
         o.delivered_customer_at,
@@ -49,6 +49,7 @@ base AS (
     FROM core.fact_order o
     JOIN core.dim_order_status s ON s.order_status = o.order_status
     LEFT JOIN core.dim_customer c ON c.customer_id = o.customer_id
+    LEFT JOIN ops.order_address_snapshot addr ON addr.order_id = o.order_id
     LEFT JOIN items    i ON i.order_id = o.order_id
     LEFT JOIN payments p ON p.order_id = o.order_id
     LEFT JOIN reviews  r ON r.order_id = o.order_id

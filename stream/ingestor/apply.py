@@ -13,6 +13,8 @@ from stream.common import (
     STATUS_RANK,
     TOPIC_EVENTS,
     TYPE_CREATED,
+    TYPE_CATEGORY,
+    TYPE_ADDRESS,
     TYPE_PAYMENT,
     TYPE_REPLAY,
     TYPE_REVIEW,
@@ -149,6 +151,14 @@ def _created(cur, envelope: dict) -> str:
     cur.execute(_UPSERT_CUSTOMER, payload["customer"])
     order = {"estimated_delivery_at": None, **payload["order"]}
     cur.execute(_UPSERT_ORDER, order)
+    cur.execute("""
+        INSERT INTO ops.order_address_snapshot
+            (order_id, customer_id, customer_unique_id, purchased_at, zip_prefix, city, state)
+        VALUES (%(order_id)s, %(customer_id)s, %(customer_unique_id)s, %(purchased_at)s,
+                NULLIF(TRIM(%(zip_prefix)s), ''), NULLIF(TRIM(%(city)s), ''),
+                NULLIF(TRIM(%(state)s), ''))
+        ON CONFLICT (order_id) DO NOTHING
+    """, {**payload["customer"], **order})
     for item in payload["items"]:
         cur.execute(_STUB_SELLER, (item["seller_id"],))
         cur.execute(_STUB_PRODUCT, (item["product_id"],))
@@ -188,12 +198,44 @@ def _replay(cur, envelope: dict) -> str:
     return STATUS_APPLIED
 
 
+def _category_changed(cur, envelope: dict) -> str:
+    payload = envelope["payload"]
+    cur.execute("SELECT 1 FROM core.dim_category WHERE category_key = %s", (payload["category_key"],))
+    if cur.fetchone() is None:
+        raise ApplyError("unknown category_key")
+    cur.execute("""
+        INSERT INTO ops.product_category_history
+            (seller_id, product_id, valid_from, category_key, event_id)
+        VALUES (%(seller_id)s, %(product_id)s, %(valid_from)s, %(category_key)s, %(event_id)s)
+        ON CONFLICT (seller_id, product_id, valid_from) DO UPDATE SET
+            category_key = EXCLUDED.category_key, event_id = EXCLUDED.event_id
+        WHERE EXCLUDED.event_id > ops.product_category_history.event_id
+    """, {**payload, "valid_from": envelope["event_ts"], "event_id": envelope["event_id"]})
+    return STATUS_APPLIED
+
+
+def _address_changed(cur, envelope: dict) -> str:
+    cur.execute("""
+        INSERT INTO ops.customer_address_history
+            (customer_unique_id, valid_from, zip_prefix, city, state, event_id)
+        VALUES (%(customer_unique_id)s, %(valid_from)s, NULLIF(TRIM(%(zip_prefix)s), ''),
+                NULLIF(TRIM(%(city)s), ''), NULLIF(TRIM(%(state)s), ''), %(event_id)s)
+        ON CONFLICT (customer_unique_id, valid_from) DO UPDATE SET
+            zip_prefix = EXCLUDED.zip_prefix, city = EXCLUDED.city, state = EXCLUDED.state,
+            event_id = EXCLUDED.event_id
+        WHERE EXCLUDED.event_id > ops.customer_address_history.event_id
+    """, {**envelope["payload"], "valid_from": envelope["event_ts"], "event_id": envelope["event_id"]})
+    return STATUS_APPLIED
+
+
 _HANDLERS = {
     TYPE_CREATED: _created,
     TYPE_PAYMENT: _payment,
     TYPE_STATUS: _status_changed,
     TYPE_REVIEW: _review,
     TYPE_REPLAY: _replay,
+    TYPE_CATEGORY: _category_changed,
+    TYPE_ADDRESS: _address_changed,
 }
 
 # Ошибки данных события; остальные ошибки БД (сеть, пересборка схем) поднимаются и повторяют пачку целиком.

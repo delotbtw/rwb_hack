@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/customer.address_changed.json",
+  "title": "customer.address_changed payload",
+  "type": "object",
+  "properties": {
+    "customer_unique_id": {
+      "$ref": "envelope.json#/$defs/order_id"
+    },
+    "zip_prefix": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    }
+  },
+  "required": [
+    "customer_unique_id",
+    "zip_prefix",
+    "city",
+    "state"
+  ],
+  "additionalProperties": false
+}

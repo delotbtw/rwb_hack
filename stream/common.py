@@ -28,7 +28,9 @@ TYPE_PAYMENT = "payment.captured"
 TYPE_STATUS = "order.status_changed"
 TYPE_REVIEW = "review.posted"
 TYPE_REPLAY = "replay.completed"
-EVENT_TYPES = (TYPE_CREATED, TYPE_PAYMENT, TYPE_STATUS, TYPE_REVIEW, TYPE_REPLAY)
+TYPE_CATEGORY = "product.category_changed"
+TYPE_ADDRESS = "customer.address_changed"
+EVENT_TYPES = (TYPE_CREATED, TYPE_PAYMENT, TYPE_STATUS, TYPE_REVIEW, TYPE_REPLAY, TYPE_CATEGORY, TYPE_ADDRESS)
 
 # Ранги статусов (K2 §4 п.2): created < approved < invoiced < processing < shipped < delivered < unavailable = canceled.
 # unknown приравнен к терминальным: статус не распознан, дальше его не повышают.

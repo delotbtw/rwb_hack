@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/product.category_changed.json",
+  "title": "product.category_changed payload",
+  "type": "object",
+  "properties": {
+    "seller_id": {
+      "$ref": "envelope.json#/$defs/order_id"
+    },
+    "product_id": {
+      "$ref": "envelope.json#/$defs/order_id"
+    },
+    "category_key": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "seller_id",
+    "product_id",
+    "category_key"
+  ],
+  "additionalProperties": false
+}

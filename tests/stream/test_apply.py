@@ -1,7 +1,7 @@
 """K2-T5: apply_batch на временной БД (A-8..A-11). В marketplace тесты ничего не пишут.
 
 Фикстура создаёт БД `capibara_t5_<hex>`, ставит в неё пустые raw-таблицы (структура читается из marketplace)
-и собирает dist/build_model.sql без секций 810/890 (DQ); удаляет БД в конце. Нет БД/роли ingestor - skip.
+и собирает текущие SQL-файлы без проверок DQ; удаляет БД в конце. Нет БД/роли ingestor - skip.
 """
 import os
 import uuid
@@ -15,7 +15,7 @@ psycopg2 = pytest.importorskip("psycopg2")
 from stream.common import make_envelope  # noqa: E402
 from stream.ingestor.apply import apply_batch  # noqa: E402
 
-BUNDLE = Path(__file__).resolve().parents[2] / "dist" / "build_model.sql"
+ROOT = Path(__file__).resolve().parents[2]
 BASE = {
     "host": os.getenv("PGHOST", "localhost"),
     "port": int(os.getenv("PGPORT", "5432")),
@@ -27,13 +27,10 @@ TS = datetime(2018, 1, 1, 10, 0, 0)
 
 
 def _model_sql() -> str:
-    """Сборка без наполнения/гейта DQ: проверки рассчитаны на полный raw, а здесь он пустой."""
-    text = BUNDLE.read_text(encoding="utf-8")
-    for name in ("810_dq_checks", "890_dq_run"):
-        start = text.index(f"-- >>> sql/80_dq/{name}.sql")
-        end = text.index(f"-- <<< sql/80_dq/{name}.sql")
-        text = text[:start] + text[end:]
-    return text
+    """Без DQ для пустого raw и глобальных ролей, чтобы не менять кластер."""
+    excluded = {"001_roles.sql", "810_dq_checks.sql", "890_dq_run.sql"}
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted((ROOT / "sql").rglob("*.sql"))
+                     if path.name not in excluded)
 
 
 def _connect(dbname, user=ADMIN_USER, password=None):
@@ -42,8 +39,6 @@ def _connect(dbname, user=ADMIN_USER, password=None):
 
 @pytest.fixture(scope="module")
 def temp_db():
-    if not BUNDLE.exists():
-        pytest.skip("нет dist/build_model.sql")
     name = f"capibara_t5_{uuid.uuid4().hex[:8]}"
     try:
         main = _connect(MAIN_DB)

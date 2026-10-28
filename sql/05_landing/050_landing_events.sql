@@ -31,3 +31,10 @@ CREATE INDEX IF NOT EXISTS ix_events_received_not_applied ON landing.events (rec
 
 COMMENT ON TABLE landing.events IS 'Журнал событий orders.events: 1 строка = 1 event_id';
 COMMENT ON COLUMN landing.events.kafka_offset IS 'Offset в партиции (offset — зарезервированное слово)';
+
+-- Расширение CHECK существующего постоянного журнала (повторная сборка безопасна).
+ALTER TABLE landing.events DROP CONSTRAINT IF EXISTS events_type_check;
+ALTER TABLE landing.events ADD CONSTRAINT events_type_check CHECK (type IN (
+    'order.created', 'payment.captured', 'order.status_changed', 'review.posted',
+    'replay.completed', 'product.category_changed', 'customer.address_changed'
+));

@@ -20,10 +20,10 @@
 ## 4. Контракты
 
 ### 4.1 События `orders.events` (`contracts/events/*.json`, JSON Schema 2020-12)
-Файлы: `envelope.json`, `order.created.json`, `payment.captured.json`, `order.status_changed.json`, `review.posted.json`, `replay.completed.json`, `dlq.json`; `additionalProperties: false`.
-Топик `orders.events`, 3 партиции, **ключ = `order_id`** (у `replay.completed` — `replay`). Глобального порядка нет: `replay.completed` несёт ожидаемые числа, сверка идёт «когда догнали».
+Файлы: `envelope.json`, `order.created.json`, `payment.captured.json`, `order.status_changed.json`, `review.posted.json`, `replay.completed.json`, `product.category_changed.json`, `customer.address_changed.json`, `dlq.json`; `additionalProperties: false`.
+Топик `orders.events`, 3 партиции, **ключ заказных событий = `order_id`** (у `replay.completed` — `replay`). Глобального порядка нет: `replay.completed` несёт ожидаемые числа, сверка идёт «когда догнали».
 
-Конверт (всё обязательно): `event_id` uuid — детерминированный uuid5 от `type:order_id:дискриминатор` (created — пусто; payment — `payment_sequential`; status_changed — новый статус; review — `review_id`), повтор реплея даёт тот же id; `type` ∈ 5 типов; `order_id` `^[0-9a-f]{32}$` (у `replay.completed` `null`); `event_ts` `YYYY-MM-DDTHH:MM:SS` naive (бизнес-время); `produced_at` UTC, оканчивается `Z`; `schema_version` const 1; `payload` по `type` (`if/then`). Деньги — строки `^-?\d+\.\d{2}$`. Статусы — из `core.dim_order_status` (в `status_changed` без `created`).
+Конверт (всё обязательно): `event_id` uuid — детерминированный uuid5 от `type:order_id:дискриминатор` (created — пусто; payment — `payment_sequential`; status_changed — новый статус; review — `review_id`), повтор реплея даёт тот же id; `type` ∈ 7 типов; `order_id` `^[0-9a-f]{32}$` (у `replay.completed`, `product.category_changed`, `customer.address_changed` — `null`); `event_ts` `YYYY-MM-DDTHH:MM:SS` naive (бизнес-время); `produced_at` UTC, оканчивается `Z`; `schema_version` const 1; `payload` по `type` (`if/then`). Деньги — строки `^-?\d+\.\d{2}$`. Статусы — из `core.dim_order_status` (в `status_changed` без `created`).
 
 | type | payload |
 |---|---|
@@ -31,12 +31,16 @@
 | payment.captured | `payment_sequential≥1, payment_type, payment_installments≥0, payment_value` |
 | order.status_changed | `order_status`, `approved_at?`, `delivered_carrier_at?`, `delivered_customer_at?` |
 | review.posted | `review_id, review_score 1..5, review_comment_title?, review_comment_message?, review_created_at, review_answered_at?` |
+| product.category_changed | `seller_id, product_id, category_key`; `event_ts` — начало действия категории предложения продавец–товар |
+| customer.address_changed | `customer_unique_id, zip_prefix, city, state`; `event_ts` — начало действия адреса |
 | replay.completed | `replay_id, cutoff (date\|null), events_total, orders_total, expected{orders_total, revenue, avg_check, customers, repeat_pct}`; для полного датасета 99441, "13221498.11", "159.88", 96096, "3.12" |
 
 DLQ (`orders.dlq`, ключ = исходный): `{failed_at, reason_code ∈ invalid_json|schema_violation|unknown_type|unsupported_version|apply_error, reason_detail, source{topic, partition, offset}, event_id (nullable), original (string — исходное тело)}`.
 
 ### 4.2 `landing.events` (`sql/05_landing/050_landing_events.sql`)
-`event_id uuid PK`, `topic text`, `partition int`, `kafka_offset bigint`, `order_id text NULL`, `type text NOT NULL CHECK (5 типов)`, `schema_version smallint`, `payload jsonb NOT NULL`, `event_ts timestamp NOT NULL`, `produced_at timestamp`, `received_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')`, `status text NOT NULL DEFAULT 'received' CHECK (received|applied|skipped_stale|error)`, `error text`. Индексы: `(order_id, event_ts)`, `(event_ts)`, частичный `(received_at) WHERE status <> 'applied'`. (`kafka_offset`: `offset` зарезервировано.)
+`event_id uuid PK`, `topic text`, `partition int`, `kafka_offset bigint`, `order_id text NULL`, `type text NOT NULL CHECK (7 типов)`, `schema_version smallint`, `payload jsonb NOT NULL`, `event_ts timestamp NOT NULL`, `produced_at timestamp`, `received_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')`, `status text NOT NULL DEFAULT 'received' CHECK (received|applied|skipped_stale|error)`, `error text`. Индексы: `(order_id, event_ts)`, `(event_ts)`, частичный `(received_at) WHERE status <> 'applied'`. (`kafka_offset`: `offset` зарезервировано.)
+
+История (`sql/05_landing/058_history.sql`) хранится в `ops.product_category_history`, `ops.customer_address_history` и `ops.order_address_snapshot`, которые переживают пересборку. Для одной сущности и `event_ts` побеждает максимальный `event_id` (UUID). Категория позиции выбирается на момент покупки по паре продавец–товар; до первой версии используется исходная текущая категория из `dim_product`. Адрес заказа фиксируется из `order.created` и позднее не обновляется событиями адреса. Q1–Q5 сохраняются.
 
 ### 4.3 Служебные таблицы (`sql/05_landing/055_ops_tables.sql`, `IF NOT EXISTS`)
 - `ops.build_params`: `id smallint PK CHECK (id=1)`, `cutoff date NULL`, `updated_at timestamp`; сид `(1, NULL)` `ON CONFLICT DO NOTHING`.

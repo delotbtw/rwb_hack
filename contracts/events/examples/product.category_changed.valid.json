@@ -1,0 +1,13 @@
+{
+  "event_id": "00000000-0000-0000-0000-000000000001",
+  "type": "product.category_changed",
+  "order_id": null,
+  "event_ts": "2020-01-02T00:00:00",
+  "produced_at": "2020-01-02T00:00:00Z",
+  "schema_version": 1,
+  "payload": {
+    "seller_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "product_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "category_key": "__unknown__"
+  }
+}

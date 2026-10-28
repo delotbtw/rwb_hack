@@ -42,7 +42,7 @@ def _validator(schema_path):
 def _target(example_name):
     """Schema file for an example: event types go through the envelope."""
     prefix = example_name.split(".valid")[0].split(".invalid")[0]
-    if prefix in EVENT_TYPES:
+    if prefix in (*EVENT_TYPES, "product.category_changed", "customer.address_changed"):
         return EVENTS / "envelope.json"
     if prefix == "chart_spec":
         return CONTRACTS / "chart_spec.json"

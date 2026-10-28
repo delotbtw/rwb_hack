@@ -23,6 +23,12 @@
     figure h3 { margin: 0 0 8px; font-size: 16px; }
     img { width: 100%; height: auto; display: block; }
     figcaption { color: var(--muted); margin-top: 8px; font-size: 14px; }
+    .answer { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+    .answer h3 { margin: 0 0 8px; font-size: 16px; }
+    .table-scroll { overflow-x: auto; max-height: 440px; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 7px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+    th { position: sticky; top: 0; background: var(--card); }
     details { margin: 28px 0 32px; } summary { cursor: pointer; font-size: 16px; font-weight: 600; }
   </style>
 </head>
@@ -57,6 +63,27 @@
     </figure>
     {% endfor %}
   </div>
+  {% endfor %}
+
+  <h2 class="section">Блок Б: ответы Q6–Q10</h2>
+  <p class="meta">Расчёты из SQL-модели по всему доступному набору после ограничения сборки; отдельные периоды указаны в заголовках.</p>
+  {% if extension_error %}
+  <p class="meta">Ответы блока Б временно недоступны. Нужна доступная модель с витринами Q6–Q10.</p>
+  {% endif %}
+  {% for answer in extension_tables %}
+  <section class="answer">
+    <h3>{{ answer.title }}</h3>
+    <p class="meta">{{ answer.caption }}</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>{% for column in answer.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in answer.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>
+        {% else %}<tr><td colspan="{{ answer.columns|length }}">Нет данных в текущей модели.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
   {% endfor %}
 
   {% if notebook_charts %}

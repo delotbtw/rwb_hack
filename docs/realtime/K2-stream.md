@@ -5,7 +5,7 @@
 Проиграть Olist потоком в Redpanda и идемпотентно применить в `core`: «история до cutoff (K3) + хвост» даёт Q1-Q5 = контрольным (`docs/tasks.md`). Входит: `stream/generator`, `stream/ingestor`, `stream/broker_reset.py`, `docker-compose.realtime.yml`, `make/stream.mk` (`live|demo-replay|stream-reset`), правки `sql/` под upsert. НЕ входит: фильтр cutoff, `demo-prep|reset`, Airflow (K3); API, «Контроль» (K1); Grafana (K4); правка `Makefile` (только оркестратор).
 
 ## 2. Зависимость от K0
-- `contracts/events/{envelope,order.created,payment.captured,order.status_changed,review.posted,replay.completed,dlq}.json`; топики `orders.events` (3 партиции, ключ `order_id`, у `replay.completed` `replay`), `orders.dlq`.
+- `contracts/events/{envelope,order.created,payment.captured,order.status_changed,review.posted,replay.completed,product.category_changed,customer.address_changed,dlq}.json`; топики `orders.events` (3 партиции, ключ заказных событий `order_id`, у `replay.completed` `replay`), `orders.dlq`.
 - `landing.events` (`status` received|applied|skipped_stale|error); `ops.stream_status` (id=1: `last_event_ts, events_total, events_per_sec, lag_events, lag_sec, dlq_count, updated_at`).
 - Роль `ingestor` по `900_grants.sql` (K0): `ALL` на `landing`, `SELECT/INSERT/UPDATE` на `core.*`, `SELECT/UPDATE` на `ops.stream_status`, `SELECT` на `ops.build_params`. Гранты K2 — только в `sql/90_grants/920_grants_stream.sql` (`900_grants.sql` не менять; K3 — `910_*`, K4 — `930_*`).
 
@@ -32,6 +32,8 @@ librdkafka (≈650 событий/с с запасом), синхронный AP
 - `created`: `dim_customer` DO NOTHING; нет `seller_id`/`product_id` → заглушка `is_inferred=true` (товар: `category_key='__unknown__'`, `is_missing_category=true`); `fact_order` DO UPDATE лишь заполняет NULL и **не трогает `order_status`**; `fact_order_item` DO UPDATE тех же значений.
 - `payment.captured`, `review.posted`: DO UPDATE по PK ядра. Заказа нет → ошибка применения.
 - `status_changed`: `FOR UPDATE` заказа; метки времени `COALESCE(текущая, новая)` всегда; `order_status` только если ранг нового **строго выше** текущего, иначе `skipped_stale`. Коммутативно (ASSUMPTION-K2-2: цепочка Olist линейна, `event_ts` для решения не нужен).
+- `product.category_changed`, `customer.address_changed`: `order_id=null`, `event_ts` — время начала действия версии; запись в постоянную историю `ops` по сущности и времени. При совпадении времени побеждает максимальный `event_id` (UUID), независимо от порядка доставки.
+- Адрес заказа фиксируется из `order.created` в `ops.order_address_snapshot` и последующими изменениями адреса не обновляется. Категория позиции выбирается на момент покупки по паре продавец–товар; до первой версии используется исходная текущая категория `dim_product`. История и снимки переживают пересборку; Q1–Q5 остаются прежними.
 - `replay.completed`: строка `ops.replay_runs`; `caught_up_at` ставится, когда после COMMIT `lag_events=0`.
 - `stream_status`: `events_total`, `dlq_count` накопительные; `last_event_ts` = max `event_ts`; `events_per_sec` окно 5 с; `lag_events` = Σ(watermark − позиция); `lag_sec` = now − `produced_at`; в простое раз в 2 с.
 

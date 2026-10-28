@@ -55,8 +55,17 @@ FROM (VALUES
      '159.88', (SELECT avg_check::text FROM mart.q03_avg_check), TRUE),
     ('Q4-CTRL', 'Q4: покупателей / вернулись, %',
      '96096 / 3.12', (SELECT customers || ' / ' || returned_pct FROM mart.q04_repeat_customers), TRUE),
-    ('Q5-CTRL', 'Q5: категорий / у крупнейшей / сумма',
+    ('Q5-CTRL', 'Q5 baseline: категорий / у крупнейшей / сумма по исходным категориям',
      '74 / 1233131.72 / 13221498.11',
-     (SELECT COUNT(*) || ' / ' || MAX(revenue) || ' / ' || SUM(revenue) FROM mart.q05_revenue_by_category), TRUE)
+     (SELECT COUNT(*) || ' / ' || MAX(revenue) || ' / ' || SUM(revenue)
+      FROM (
+          SELECT c.category_key, SUM(i.price) AS revenue
+          FROM core.fact_order_item i
+          JOIN core.fact_order o ON o.order_id = i.order_id
+          JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_revenue
+          LEFT JOIN core.dim_product p ON p.product_id = i.product_id
+          LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
+          GROUP BY c.category_key
+      ) baseline), TRUE)
 ) AS t(check_id, description, expected, actual, is_const)
 CROSS JOIN (SELECT (SELECT cutoff FROM ops.build_params WHERE id = 1) AS cutoff) AS c;

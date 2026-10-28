@@ -124,3 +124,4 @@ T1–T4 параллельны (файлы не пересекаются); `dist
 - `ASSUMPTION-K0-1`, `K0-2` — принять (рекомендация).
 - `ASSUMPTION-K0-3`: `make build` в Makefile нет, используем `make reset` / `make etl`; алиас не добавлять.
 - `ASSUMPTION-K0-4`: 3 партиции и `replay.completed` без гарантии порядка достаточны при сверке «догнали».
+- `DEFERRED-K0-R` (ревью K0, решение команды — MVP без внешних пользователей): не чиним строгость JSON Schema (диапазоны дат, деньги ≥ 0, хвостовой `\n`, пустые строки), срезы `order_status` у выручечных метрик, `REVOKE TEMP` для `app_ro`, `GRANT ALL` у `ingestor` на `landing.events`, проверку `is_configured` в `llm.py`. Известные ограничения, озвучиваются на защите.

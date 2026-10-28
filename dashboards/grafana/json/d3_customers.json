@@ -1,0 +1,1224 @@
+{
+  "uid": "capibara-d3",
+  "title": "D3. Покупатели",
+  "description": "Покупатели, повторные покупки, штаты и удержание по когортам (mart.v_customer, mart.v_order_seq, mart.v_cohort_retention).",
+  "tags": [
+    "capibara",
+    "customers"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "2016-09-01T00:00:00.000Z",
+    "to": "2018-11-01T00:00:00.000Z"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "customer_state",
+        "label": "Штат покупателя",
+        "description": "Штат покупателя (последний; у новых/повторных штат заказа; у когорт штат первого заказа); All включает пустые штаты",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT last_state FROM mart.v_customer WHERE last_state IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT last_state FROM mart.v_customer WHERE last_state IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "category",
+        "label": "Категория 1-го заказа",
+        "description": "Категория первого заказа покупателя; All включает покупателей без категории",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "capibara-pg"
+        },
+        "query": "SELECT DISTINCT first_category FROM mart.v_customer WHERE first_category IS NOT NULL ORDER BY 1",
+        "definition": "SELECT DISTINCT first_category FROM mart.v_customer WHERE first_category IS NOT NULL ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": "*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "gran",
+        "label": "Детализация",
+        "description": "Шаг ряда «Новые и повторные» (в витрине месяц, недели недоступны)",
+        "type": "custom",
+        "query": "month : month,quarter : quarter",
+        "options": [
+          {
+            "selected": true,
+            "text": "month",
+            "value": "month"
+          },
+          {
+            "selected": false,
+            "text": "quarter",
+            "value": "quarter"
+          }
+        ],
+        "current": {
+          "selected": true,
+          "text": "month",
+          "value": "month"
+        },
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Покупатели",
+      "description": "Число уникальных покупателей (customer_unique_id, все статусы заказов; metric_catalog.customers). Срезы: месяц первого заказа, последний штат покупателя, категория первого заказа.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) AS customers\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Вернувшиеся",
+      "description": "Доля покупателей с 2 и более заказами (все статусы): Σ is_repeat / число покупателей, считается на срезе заново (неаддитивно; metric_catalog.repeat_customers_pct). Срезы: месяц первого заказа, последний штат, категория первого заказа.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 5,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_repeat)::numeric / NULLIF(COUNT(*), 0) AS repeat_share\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Выручка покупателей",
+      "description": "Σ goods_value доставленных заказов покупателей среза, без фрахта (аддитивно; на полном периоде равна выручке D1). Срезы: месяц первого заказа, последний штат, категория первого заказа. Единица: R$.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 0,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT SUM(revenue_total) AS revenue\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Выручка на покупателя",
+      "description": "Σ revenue_total / число покупателей среза (неаддитивно: пересчитывается на срезе). Покупатели без доставленных заказов входят в знаменатель. Единица: R$.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT SUM(revenue_total) / NULLIF(COUNT(*), 0) AS revenue_per_customer\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyBRL",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Заказов на покупателя",
+      "description": "Σ orders_count / число покупателей среза (все статусы заказов; неаддитивно: пересчитывается на срезе).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 19,
+        "y": 0,
+        "w": 5,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT SUM(orders_count)::numeric / NULLIF(COUNT(*), 0) AS orders_per_customer\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "noValue": "нет данных",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Новые и повторные покупатели",
+      "description": "Новые: первые заказы покупателей (COUNT(*) FILTER (WHERE is_first_order)). Повторные: уникальные покупатели, сделавшие не первый заказ в периоде (COUNT(DISTINCT customer_unique_id) FILTER (WHERE NOT is_first_order)); по периодам не суммируются. Здесь период и штат относятся к самому заказу (месяц и штат заказа), категория: первого заказа покупателя. Детализация: месяц или квартал (в витрине нет даты заказа точнее месяца).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  date_trunc('$gran', purchase_month::timestamp) AS time,\n  COUNT(*) FILTER (WHERE is_first_order) AS \"Новые\",\n  COUNT(DISTINCT customer_unique_id) FILTER (WHERE NOT is_first_order) AS \"Повторные\"\nFROM mart.v_order_seq\nWHERE purchase_month >= date_trunc('month', $__timeFrom()::timestamp) AND purchase_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR customer_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0,
+            "spanNulls": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Новые"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Повторные"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Покупатели по штатам",
+      "description": "Число покупателей по последнему штату (customer_unique_id; покупатель, сменивший штат, учтён один раз, в последнем). Срезы: месяц первого заказа, штат, категория первого заказа. «не определён» — покупатели без штата.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(last_state, 'не определён') AS \"Штат\",\n  COUNT(*) AS \"Покупатели\"\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))\nGROUP BY 1\nORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Штат",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "auto",
+        "barWidth": 0.8,
+        "groupWidth": 0.8,
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "locale",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Доля вернувшихся по штатам",
+      "description": "Доля покупателей с 2 и более заказами по последнему штату: Σ is_repeat / число покупателей штата (неаддитивно, не суммируется). В малых штатах мало покупателей, доля нестабильна. Срезы: месяц первого заказа, штат, категория первого заказа.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(last_state, 'не определён') AS \"Штат\",\n  COUNT(*) FILTER (WHERE is_repeat)::numeric / NULLIF(COUNT(*), 0) AS \"Доля вернувшихся\"\nFROM mart.v_customer\nWHERE first_order_month >= date_trunc('month', $__timeFrom()::timestamp) AND first_order_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR last_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))\nGROUP BY 1\nORDER BY 2 DESC NULLS LAST"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Штат",
+        "legend": {
+          "showLegend": false
+        },
+        "showValue": "auto",
+        "barWidth": 0.8,
+        "groupWidth": 0.8,
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 1,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Удержание по когортам, месяцы 0..12",
+      "description": "Строка: когорта = месяц первого заказа. Ячейка: доля покупателей когорты, сделавших заказ через N месяцев после первого = Σ active_customers / Σ cohort_size (не среднее retention_rate). Показаны только наблюдаемые месяцы (пусто: период ещё не наступил к концу данных). Строка «Все когорты» считается по когортам, у которых этот месяц уже наступил. Срезы: месяц когорты, штат и категория первого заказа.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 14
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT\n  COALESCE(to_char(cohort_month, 'YYYY-MM'), 'Все когорты') AS \"Когорта\",\n  SUM(cohort_size) FILTER (WHERE month_offset = 0) AS \"Покупателей\",\n  SUM(active_customers) FILTER (WHERE month_offset = 0)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 0), 0) AS \"Мес. 0\",\n  SUM(active_customers) FILTER (WHERE month_offset = 1)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 1), 0) AS \"Мес. 1\",\n  SUM(active_customers) FILTER (WHERE month_offset = 2)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 2), 0) AS \"Мес. 2\",\n  SUM(active_customers) FILTER (WHERE month_offset = 3)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 3), 0) AS \"Мес. 3\",\n  SUM(active_customers) FILTER (WHERE month_offset = 4)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 4), 0) AS \"Мес. 4\",\n  SUM(active_customers) FILTER (WHERE month_offset = 5)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 5), 0) AS \"Мес. 5\",\n  SUM(active_customers) FILTER (WHERE month_offset = 6)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 6), 0) AS \"Мес. 6\",\n  SUM(active_customers) FILTER (WHERE month_offset = 7)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 7), 0) AS \"Мес. 7\",\n  SUM(active_customers) FILTER (WHERE month_offset = 8)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 8), 0) AS \"Мес. 8\",\n  SUM(active_customers) FILTER (WHERE month_offset = 9)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 9), 0) AS \"Мес. 9\",\n  SUM(active_customers) FILTER (WHERE month_offset = 10)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 10), 0) AS \"Мес. 10\",\n  SUM(active_customers) FILTER (WHERE month_offset = 11)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 11), 0) AS \"Мес. 11\",\n  SUM(active_customers) FILTER (WHERE month_offset = 12)::numeric\n    / NULLIF(SUM(cohort_size) FILTER (WHERE month_offset = 12), 0) AS \"Мес. 12\"\nFROM mart.v_cohort_retention\nWHERE month_offset <= 12\n  AND cohort_month >= date_trunc('month', $__timeFrom()::timestamp) AND cohort_month <= $__timeTo()::timestamp\n  AND ('*' IN ($customer_state) OR first_state IN ($customer_state))\n  AND ('*' IN ($category) OR first_category IN ($category))\nGROUP BY GROUPING SETS ((cohort_month), ())\nORDER BY GROUPING(cohort_month) DESC, cohort_month"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "",
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "rgba(50, 116, 217, 0.15)",
+                "value": 0.002
+              },
+              {
+                "color": "rgba(50, 116, 217, 0.35)",
+                "value": 0.004
+              },
+              {
+                "color": "rgba(50, 116, 217, 0.55)",
+                "value": 0.006
+              },
+              {
+                "color": "rgba(50, 116, 217, 0.8)",
+                "value": 0.01
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Когорта"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Покупателей"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 0"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 1"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 2"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 3"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 4"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 5"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 6"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 7"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 8"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 9"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 10"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 11"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Мес. 12"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 80
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "text",
+      "title": "Ограничения данных",
+      "description": "Что учитывать при чтении дашборда.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [],
+      "options": {
+        "mode": "markdown",
+        "content": "**Ограничения данных**\n\n- Покупатель = `customer_unique_id`. У 252 покупателей (из 96 096) адрес меняется между заказами, у 39 из них меняется штат (CC-01). Адрес привязан к заказу, поэтому штат зависит от панели: у покупателей это последний штат, у новых и повторных штат заказа, у когорт штат первого заказа.\n- Повторных мало: большинство покупателей сделали ровно один заказ. Удержание по месяцам низкое по природе данных, а не из-за ошибки расчёта.\n- Данные охватывают 09.2016-10.2018. Когорты последних месяцев наблюдаются не полностью: ячейки за пределами данных пустые, а не нулевые.\n- Месяц 0 всегда 100 %. Доли для малых штатов и категорий считаются на малых числах и нестабильны.\n- Категория первого заказа не определена у 708 покупателей (заказ без позиций). Они видны только при «All» в фильтре категории."
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Определения",
+      "description": "Первые две строки дословно из mart.metric_catalog.formula_sql; остальные описывают метрики D3, которых нет в каталоге (формулы дословно из запросов панелей).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "capibara-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "capibara-pg"
+          },
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT name AS \"Метрика\", formula_sql AS \"Формула\", source_view AS \"Источник\", unit AS \"Единица\",\n  CASE WHEN is_additive THEN 'аддитивная' ELSE 'неаддитивная' END AS \"Тип\"\nFROM mart.metric_catalog\nWHERE metric_code IN ('customers', 'repeat_customers_pct')\nUNION ALL\nSELECT * FROM (VALUES\n  ('Выручка на покупателя (D3)', 'SUM(revenue_total) / NULLIF(COUNT(*), 0)', 'mart.v_customer', 'BRL', 'неаддитивная'),\n  ('Заказов на покупателя (D3)', 'SUM(orders_count)::numeric / NULLIF(COUNT(*), 0)', 'mart.v_customer', 'count', 'неаддитивная'),\n  ('Вернувшиеся (D3)', 'COUNT(*) FILTER (WHERE is_repeat)::numeric / NULLIF(COUNT(*), 0)', 'mart.v_customer', 'доля', 'неаддитивная'),\n  ('Новые покупатели (D3)', 'COUNT(*) FILTER (WHERE is_first_order)', 'mart.v_order_seq', 'count', 'неаддитивная'),\n  ('Повторные покупатели (D3)', 'COUNT(DISTINCT customer_unique_id) FILTER (WHERE NOT is_first_order)', 'mart.v_order_seq', 'count', 'неаддитивная'),\n  ('Удержание когорты (D3)', 'SUM(active_customers)::numeric / NULLIF(SUM(cohort_size), 0) на month_offset = N', 'mart.v_cohort_retention', 'доля', 'неаддитивная')\n) AS d(\"Метрика\", \"Формула\", \"Источник\", \"Единица\", \"Тип\")"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Метрика"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Формула"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 560
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Источник"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 190
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Единица"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

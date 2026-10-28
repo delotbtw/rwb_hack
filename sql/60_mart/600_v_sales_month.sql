@@ -2,9 +2,9 @@
 -- grain  : 1 строка = 1 календарный месяц 2016-09..2018-10 (включая месяцы без заказов)
 -- source : core.fact_order, core.fact_order_item, core.dim_order_status
 -- cc     : FR-30 (выручка = SUM(price) по is_revenue, без freight, месяц по purchase); пустой месяц 2016-11
--- why    : материализовано — графики читают за доли миллисекунды
+-- why    : обычный view: поток (ingestor) обновляет core, REFRESH не нужен; Q1-Q5 видят события сразу
 
-CREATE MATERIALIZED VIEW mart.v_sales_month AS
+CREATE VIEW mart.v_sales_month AS
 WITH calendar AS (
     SELECT generate_series(DATE '2016-09-01', DATE '2018-10-01', INTERVAL '1 month')::date AS month
 ),
@@ -24,5 +24,5 @@ LEFT JOIN revenue_items r ON r.month = c.month
 GROUP BY c.month
 ORDER BY c.month;
 
-COMMENT ON MATERIALIZED VIEW mart.v_sales_month IS
+COMMENT ON VIEW mart.v_sales_month IS
     'Выручка (SUM price, delivered) и число заказов по месяцу оформления; месяцы без заказов = 0';

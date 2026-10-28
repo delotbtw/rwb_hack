@@ -4,7 +4,7 @@
 -- cc     : 775 заказов без позиций, 1 без оплаты, 639 с расхождением оплаты; 8 delivered без даты вручения
 -- why    : каждый поток сначала агрегируется до заказа отдельно — без fan-out (2 товара × 2 оплаты ≠ 4 строки)
 
-CREATE MATERIALIZED VIEW mart.order_summary AS
+CREATE VIEW mart.order_summary AS
 WITH items AS (
     SELECT order_id,
            COUNT(*)                   AS line_count,
@@ -70,6 +70,5 @@ SELECT
         AND b.delivered_customer_at >= b.purchased_at)                   AS is_valid_delivery
 FROM base b;
 
-CREATE UNIQUE INDEX ON mart.order_summary (order_id);
-COMMENT ON MATERIALIZED VIEW mart.order_summary IS
+COMMENT ON VIEW mart.order_summary IS
     'Один заказ: суммы позиций/оплат/отзывов, сверка оплаты, срок и опоздание доставки';

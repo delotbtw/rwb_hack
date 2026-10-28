@@ -4,7 +4,7 @@
 -- cc     : FR-30 выручка = SUM(price) по is_revenue; выручка продавца — только его позиции, не весь чек
 -- why    : гранула позиции: заказ с товарами разных продавцов делится между ними корректно
 
-CREATE MATERIALIZED VIEW mart.v_seller_sales AS
+CREATE VIEW mart.v_seller_sales AS
 SELECT
     i.seller_id,
     s.city,
@@ -18,7 +18,7 @@ JOIN core.dim_order_status st ON st.order_status = o.order_status AND st.is_reve
 LEFT JOIN core.dim_seller s   ON s.seller_id = i.seller_id
 GROUP BY i.seller_id, s.city, s.state;
 
-CREATE MATERIALIZED VIEW mart.v_category_sales AS
+CREATE VIEW mart.v_category_sales AS
 SELECT
     c.category_key,
     c.label,
@@ -32,5 +32,5 @@ LEFT JOIN core.dim_product p  ON p.product_id = i.product_id
 LEFT JOIN core.dim_category c ON c.category_key = COALESCE(p.category_key, '__unknown__')
 GROUP BY c.category_key, c.label, c.is_unknown;
 
-COMMENT ON MATERIALIZED VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';
-COMMENT ON MATERIALIZED VIEW mart.v_category_sales IS 'Выручка и доля категории; unknown — отдельная строка, сумма = общей выручке';
+COMMENT ON VIEW mart.v_seller_sales IS 'Выручка, заказы и единицы продавца по доставленным заказам';
+COMMENT ON VIEW mart.v_category_sales IS 'Выручка и доля категории; unknown — отдельная строка, сумма = общей выручке';

@@ -17,4 +17,7 @@ ENV AIRFLOW_CONSTRAINTS_URL=https://raw.githubusercontent.com/apache/airflow/con
 # Проверка на сборке: пин версии не уехал, нужный драйвер на месте.
 RUN test "$(airflow version)" = "${AIRFLOW_VERSION}" && python -c "import psycopg2"
 
+# pytest для проверки DAG (A-10) внутри образа; версия из constraints Airflow.
+RUN pip install --no-cache-dir "pytest==8.2.1" --constraint "${AIRFLOW_CONSTRAINTS_URL}"
+
 WORKDIR /work

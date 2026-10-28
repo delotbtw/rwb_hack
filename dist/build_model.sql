@@ -22,6 +22,145 @@ COMMENT ON SCHEMA core IS 'Модель: измерения и факты';
 COMMENT ON SCHEMA mart IS 'Витрины для аналитики, ответов и графиков; DQ';
 -- <<< sql/00_setup/000_schemas.sql
 
+-- >>> sql/00_setup/001_roles.sql
+-- object : роли app_ro (чтение mart для API/Grafana) и ingestor (запись в landing/core из потока)
+-- grain  : -
+-- source : -
+-- cc     : NFR (разграничение доступа), K0 §4.4
+-- why    : роли живут на уровне кластера и не пересоздаются; гранты выдаёт 900_grants.sql (схемы дропаются при сборке)
+-- ASSUMPTION-K0-1: демо-пароль = имя роли (только локально); пользователь hack не меняется
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_ro') THEN
+        CREATE ROLE app_ro LOGIN PASSWORD 'app_ro';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ingestor') THEN
+        CREATE ROLE ingestor LOGIN PASSWORD 'ingestor';
+    END IF;
+END
+$$;
+
+ALTER ROLE app_ro SET statement_timeout = '5s';
+ALTER ROLE app_ro SET default_transaction_read_only = on;
+-- <<< sql/00_setup/001_roles.sql
+
+-- >>> sql/00_setup/002_persistent_schemas.sql
+-- object : схемы landing и ops
+-- grain  : -
+-- source : -
+-- cc     : K0 §3.1
+-- why    : 000_schemas.sql дропает stg/core/mart на каждой сборке; журнал событий и служебные таблицы
+--          должны пережить сборку, поэтому схемы создаются IF NOT EXISTS и никогда не дропаются
+
+CREATE SCHEMA IF NOT EXISTS landing;
+CREATE SCHEMA IF NOT EXISTS ops;
+
+COMMENT ON SCHEMA landing IS 'Журнал входящих событий real-time; не пересоздаётся при сборке';
+COMMENT ON SCHEMA ops IS 'Служебные таблицы: запуски ETL, статус потока, сверка, параметры сборки; не пересоздаётся';
+-- <<< sql/00_setup/002_persistent_schemas.sql
+
+-- >>> sql/05_landing/050_landing_events.sql
+-- object : landing.events
+-- grain  : 1 строка = 1 событие orders.events (event_id)
+-- source : Kafka topic orders.events
+-- cc     : K0 §4.1, §4.2
+-- why    : неизменяемый журнал входящих событий; PK event_id даёт идемпотентность
+--          (ON CONFLICT DO NOTHING), IF NOT EXISTS — данные переживают пересборку
+
+CREATE TABLE IF NOT EXISTS landing.events (
+    event_id       uuid PRIMARY KEY,
+    topic          text,
+    partition      integer,
+    kafka_offset   bigint,
+    order_id       text,
+    type           text NOT NULL CHECK (type IN (
+                       'order.created', 'payment.captured', 'order.status_changed',
+                       'review.posted', 'replay.completed')),
+    schema_version smallint,
+    payload        jsonb NOT NULL,
+    event_ts       timestamp NOT NULL,
+    produced_at    timestamp,
+    received_at    timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    status         text NOT NULL DEFAULT 'received'
+                       CHECK (status IN ('received', 'applied', 'skipped_stale', 'error')),
+    error          text
+);
+
+CREATE INDEX IF NOT EXISTS ix_events_order_event_ts ON landing.events (order_id, event_ts);
+CREATE INDEX IF NOT EXISTS ix_events_event_ts ON landing.events (event_ts);
+CREATE INDEX IF NOT EXISTS ix_events_received_not_applied ON landing.events (received_at)
+    WHERE status <> 'applied';
+
+COMMENT ON TABLE landing.events IS 'Журнал событий orders.events: 1 строка = 1 event_id';
+COMMENT ON COLUMN landing.events.kafka_offset IS 'Offset в партиции (offset — зарезервированное слово)';
+-- <<< sql/05_landing/050_landing_events.sql
+
+-- >>> sql/05_landing/055_ops_tables.sql
+-- object : ops.build_params, ops.etl_runs, ops.stream_status, ops.reconcile_result
+-- grain  : build_params и stream_status — 1 строка (id=1); etl_runs — 1 строка = 1 запуск;
+--          reconcile_result — 1 строка = 1 проверка сверки batch vs stream
+-- source : -
+-- cc     : K0 §3, §4.3, §4.5
+-- why    : служебное состояние ETL и потока переживает пересборку (IF NOT EXISTS, сид ON CONFLICT DO NOTHING);
+--          сервисы пишут в ops.*, API/Grafana читают тонкие views mart.* (660_ops_views.sql)
+
+CREATE TABLE IF NOT EXISTS ops.build_params (
+    id         smallint PRIMARY KEY CHECK (id = 1),
+    cutoff     date,
+    updated_at timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
+INSERT INTO ops.build_params (id, cutoff) VALUES (1, NULL)
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS ops.etl_runs (
+    run_id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ds             date NOT NULL,
+    kind           text NOT NULL CHECK (kind IN ('batch', 'stream', 'demo')),
+    status         text NOT NULL CHECK (status IN ('running', 'success', 'failed', 'blocked', 'published')),
+    started_at     timestamp NOT NULL,
+    finished_at    timestamp,
+    dq_passed      smallint,
+    dq_total       smallint,
+    reconcile_diff numeric(14, 2),
+    cutoff         date,
+    note           text
+);
+
+CREATE TABLE IF NOT EXISTS ops.stream_status (
+    id             smallint PRIMARY KEY CHECK (id = 1),
+    last_event_ts  timestamp,
+    events_total   bigint NOT NULL DEFAULT 0,
+    events_per_sec numeric(10, 2) NOT NULL DEFAULT 0,
+    lag_events     bigint NOT NULL DEFAULT 0,
+    lag_sec        numeric(10, 2) NOT NULL DEFAULT 0,
+    dlq_count      bigint NOT NULL DEFAULT 0,
+    updated_at     timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
+INSERT INTO ops.stream_status (id) VALUES (1)
+ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS ops.reconcile_result (
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    run_id       bigint NOT NULL REFERENCES ops.etl_runs (run_id),
+    ds           date NOT NULL,
+    day          date,
+    check_code   text NOT NULL CHECK (check_code IN ('orders_count', 'revenue_sum', 'payments_sum')),
+    batch_value  numeric(18, 2),
+    stream_value numeric(18, 2),
+    diff         numeric(18, 2) GENERATED ALWAYS AS (batch_value - stream_value) STORED,
+    is_ok        boolean NOT NULL,
+    checked_at   timestamp NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
+COMMENT ON TABLE ops.build_params IS 'Параметры сборки; cutoff NULL = полная сборка';
+COMMENT ON TABLE ops.etl_runs IS 'Учёт запусков ETL';
+COMMENT ON TABLE ops.stream_status IS 'Состояние потока (одна строка)';
+COMMENT ON TABLE ops.reconcile_result IS 'Сверка batch vs stream; diff = batch - stream';
+-- <<< sql/05_landing/055_ops_tables.sql
+
 -- >>> sql/10_seed/110_dim_order_status.sql
 -- object : core.dim_order_status
 -- grain  : 1 строка = 1 статус заказа
@@ -401,6 +540,40 @@ COMMENT ON MATERIALIZED VIEW mart.v_sales_month IS
     'Выручка (SUM price, delivered) и число заказов по месяцу оформления; месяцы без заказов = 0';
 -- <<< sql/60_mart/600_v_sales_month.sql
 
+-- >>> sql/60_mart/605_v_sales_item.sql
+-- object : mart.v_sales_item
+-- grain  : 1 строка = 1 позиция заказа (order_id, order_item_id), все статусы заказа
+-- source : core.fact_order_item, core.fact_order, core.dim_order_status, core.dim_seller, core.dim_product, core.dim_category, core.dim_customer
+-- cc     : FR-30 выручка = SUM(price) по is_revenue, без freight; месяц по purchase; покупатель = customer_unique_id
+-- why    : единая гранула позиции для выручки, единиц и срезов по продавцу/категории без JOIN фактов в панелях (К5)
+
+CREATE VIEW mart.v_sales_item AS
+SELECT
+    i.order_id,
+    i.order_item_id,
+    o.purchased_at                                   AS purchase_ts,
+    date_trunc('month', o.purchased_at)::date        AS purchase_month,
+    o.order_status,
+    COALESCE(st.is_revenue, FALSE)                   AS is_revenue,
+    i.seller_id,
+    s.state_normalized                               AS seller_state,
+    c.category_key,
+    c.label                                          AS category_label,
+    cu.customer_unique_id,
+    cu.state_normalized                              AS customer_state,
+    i.price,
+    i.freight_value
+FROM core.fact_order_item i
+LEFT JOIN core.fact_order o        ON o.order_id = i.order_id
+LEFT JOIN core.dim_order_status st ON st.order_status = o.order_status
+LEFT JOIN core.dim_seller s        ON s.seller_id = i.seller_id
+LEFT JOIN core.dim_product p       ON p.product_id = i.product_id
+LEFT JOIN core.dim_category c      ON c.category_key = COALESCE(p.category_key, '__unknown__')
+LEFT JOIN core.dim_customer cu     ON cu.customer_id = o.customer_id;
+
+COMMENT ON VIEW mart.v_sales_item IS 'Позиция заказа: выручка, фрахт и срезы месяц/статус/продавец/категория/покупатель';
+-- <<< sql/60_mart/605_v_sales_item.sql
+
 -- >>> sql/60_mart/610_order_summary.sql
 -- object : mart.order_summary
 -- grain  : 1 строка = 1 заказ (все 99 441, все статусы); PK order_id
@@ -572,6 +745,154 @@ SELECT
     (SELECT ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY delivery_days))::numeric, 1)
        FROM mart.order_summary WHERE is_valid_delivery)                                   AS median_delivery_days;
 -- <<< sql/60_mart/640_v_kpi.sql
+
+-- >>> sql/60_mart/650_metric_catalog.sql
+-- object : mart.metric_catalog
+-- grain  : 1 строка = 1 метрика (metric_code), 20 метрик
+-- source : справочник; формулы считаются над mart.v_sales_item, mart.order_summary, mart.v_kpi
+-- cc     : FR-30 выручка = Σ price по is_revenue; неаддитивные метрики (средний чек, доли, медиана, уникальные) не суммируются по срезам
+-- why    : одна точка правды для формул, единиц и допустимых срезов: API /api/query, агент и подписи дашбордов
+
+CREATE TABLE mart.metric_catalog (
+    metric_code text PRIMARY KEY,
+    name        text NOT NULL,
+    description text NOT NULL,
+    formula_sql text NOT NULL,
+    source_view text NOT NULL,
+    grain       text NOT NULL,
+    additivity  text NOT NULL CHECK (additivity IN ('additive', 'semi', 'non')),
+    is_additive boolean GENERATED ALWAYS AS (additivity = 'additive') STORED,
+    unit        text NOT NULL CHECK (unit IN ('BRL', 'count', 'pct', 'days', 'score')),
+    allowed_dims text[] NOT NULL,
+    note        text
+);
+
+INSERT INTO mart.metric_catalog
+    (metric_code, name, description, formula_sql, source_view, grain, additivity, unit, allowed_dims, note)
+VALUES
+    ('revenue', 'Выручка', 'Сумма цен позиций доставленных заказов, без фрахта',
+     $f$SUM(price) FILTER (WHERE is_revenue)$f$,
+     'mart.v_sales_item', 'позиция заказа', 'additive', 'BRL',
+     ARRAY['month', 'customer_state', 'order_status', 'seller_state', 'seller_id', 'category'], NULL),
+    ('units_sold', 'Продано единиц', 'Число позиций доставленных заказов',
+     $f$COUNT(*) FILTER (WHERE is_revenue)$f$,
+     'mart.v_sales_item', 'позиция заказа', 'additive', 'count',
+     ARRAY['month', 'customer_state', 'order_status', 'seller_state', 'seller_id', 'category'], NULL),
+    ('freight_total', 'Фрахт', 'Сумма стоимости доставки по позициям доставленных заказов',
+     $f$SUM(freight_value) FILTER (WHERE is_revenue)$f$,
+     'mart.v_sales_item', 'позиция заказа', 'additive', 'BRL',
+     ARRAY['month', 'customer_state', 'order_status', 'seller_state', 'seller_id', 'category'], NULL),
+    ('sellers_active', 'Активные продавцы', 'Число продавцов с доставленными позициями',
+     $f$COUNT(DISTINCT seller_id) FILTER (WHERE is_revenue)$f$,
+     'mart.v_sales_item', 'позиция заказа', 'non', 'count',
+     ARRAY['month', 'customer_state', 'order_status', 'seller_state', 'seller_id', 'category'],
+     'Уникальные: сумма по срезам завышает итог'),
+    ('orders_total', 'Заказы', 'Число заказов во всех статусах',
+     $f$COUNT(*)$f$,
+     'mart.order_summary', 'заказ', 'additive', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('orders_delivered', 'Доставленные заказы', 'Число заказов со статусом, дающим выручку',
+     $f$COUNT(*) FILTER (WHERE is_revenue)$f$,
+     'mart.order_summary', 'заказ', 'additive', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('orders_canceled', 'Отменённые заказы', 'Число заказов со статусом canceled',
+     $f$COUNT(*) FILTER (WHERE order_status = 'canceled')$f$,
+     'mart.order_summary', 'заказ', 'additive', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('cancel_rate_pct', 'Доля отмен', 'Доля отменённых заказов от всех, %',
+     $f$ROUND(100.0 * COUNT(*) FILTER (WHERE order_status = 'canceled') / NULLIF(COUNT(*), 0), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'pct',
+     ARRAY['month', 'customer_state', 'order_status'], 'Доля: не суммируется по срезам'),
+    ('gmv_with_freight', 'GMV с доставкой', 'Сумма цен и фрахта доставленных заказов',
+     $f$SUM(order_value) FILTER (WHERE is_revenue)$f$,
+     'mart.order_summary', 'заказ', 'additive', 'BRL',
+     ARRAY['month', 'customer_state', 'order_status'], 'Справочно; выручка считается без фрахта'),
+    ('avg_check', 'Средний чек', 'Средняя стоимость доставленного заказа (цены + фрахт)',
+     $f$ROUND(SUM(order_value) FILTER (WHERE is_revenue) / NULLIF(COUNT(*) FILTER (WHERE is_revenue), 0), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'BRL',
+     ARRAY['month', 'customer_state', 'order_status'], 'Отношение: не суммируется по срезам'),
+    ('avg_items_per_order', 'Позиций в заказе', 'Среднее число позиций в доставленном заказе',
+     $f$ROUND(AVG(line_count) FILTER (WHERE is_revenue), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('payments_total', 'Сумма оплат', 'Сумма платежей по доставленным заказам',
+     $f$SUM(payment_value) FILTER (WHERE is_revenue)$f$,
+     'mart.order_summary', 'заказ', 'additive', 'BRL',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('payment_mismatch_orders', 'Заказы с расхождением оплаты', 'Число заказов, где оплата не равна стоимости позиций',
+     $f$COUNT(*) FILTER (WHERE reconciliation = 'Расхождение')$f$,
+     'mart.order_summary', 'заказ', 'additive', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('customers', 'Покупатели', 'Число уникальных покупателей (customer_unique_id)',
+     $f$COUNT(DISTINCT customer_unique_id)$f$,
+     'mart.order_summary', 'заказ', 'non', 'count',
+     ARRAY['month', 'customer_state', 'order_status'], 'Уникальные: сумма по срезам завышает итог'),
+    ('late_pct', 'Доля опозданий', 'Доля доставок позже обещанной даты среди корректных доставок, %',
+     $f$ROUND(100.0 * COUNT(*) FILTER (WHERE is_valid_delivery AND delay_days > 0) / NULLIF(COUNT(*) FILTER (WHERE is_valid_delivery), 0), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'pct',
+     ARRAY['month', 'customer_state', 'order_status'], 'Доля: не суммируется по срезам'),
+    ('avg_delivery_days', 'Средний срок доставки', 'Среднее число дней от покупки до вручения',
+     $f$ROUND((AVG(delivery_days) FILTER (WHERE is_valid_delivery))::numeric, 1)$f$,
+     'mart.order_summary', 'заказ', 'non', 'days',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('median_delivery_days', 'Медианный срок доставки', 'Медиана дней от покупки до вручения',
+     $f$ROUND((percentile_cont(0.5) WITHIN GROUP (ORDER BY delivery_days) FILTER (WHERE is_valid_delivery))::numeric, 1)$f$,
+     'mart.order_summary', 'заказ', 'non', 'days',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('avg_review_score', 'Средняя оценка', 'Среднее значение средних оценок заказов',
+     $f$ROUND(AVG(review_score_mean), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'score',
+     ARRAY['month', 'customer_state', 'order_status'], NULL),
+    ('reviewed_orders_pct', 'Доля заказов с отзывом', 'Доля заказов хотя бы с одним отзывом, %',
+     $f$ROUND(100.0 * COUNT(*) FILTER (WHERE review_count > 0) / NULLIF(COUNT(*), 0), 2)$f$,
+     'mart.order_summary', 'заказ', 'non', 'pct',
+     ARRAY['month', 'customer_state', 'order_status'], 'Доля: не суммируется по срезам'),
+    ('repeat_customers_pct', 'Доля повторных покупателей', 'Доля покупателей с двумя и более заказами, %',
+     $f$MAX(repeat_pct)$f$,
+     'mart.v_kpi', 'площадка за весь период', 'non', 'pct',
+     ARRAY[]::text[], 'Только итог за период, срезов нет');
+
+COMMENT ON TABLE mart.metric_catalog IS 'Каталог метрик: формула, источник, аддитивность, единица и допустимые срезы';
+-- <<< sql/60_mart/650_metric_catalog.sql
+
+-- >>> sql/60_mart/655_dimension_catalog.sql
+-- object : mart.dimension_catalog
+-- grain  : 1 строка = 1 срез (dim_code)
+-- source : справочник; колонки mart.order_summary и mart.v_sales_item
+-- cc     : срез допустим для метрики только если его колонка есть в source_view метрики
+-- why    : API и агент проверяют допустимость срезов по каталогу, а не по зашитым спискам
+
+CREATE TABLE mart.dimension_catalog (
+    dim_code     text PRIMARY KEY,
+    name         text NOT NULL,
+    column_name  text NOT NULL,
+    dim_type     text NOT NULL CHECK (dim_type IN ('categorical', 'time')),
+    source_views text[] NOT NULL
+);
+
+INSERT INTO mart.dimension_catalog (dim_code, name, column_name, dim_type, source_views) VALUES
+    ('month',          'Месяц покупки',     'purchase_month',  'time',        ARRAY['mart.order_summary', 'mart.v_sales_item']),
+    ('customer_state', 'Штат покупателя',   'customer_state',  'categorical', ARRAY['mart.order_summary', 'mart.v_sales_item']),
+    ('order_status',   'Статус заказа',     'order_status',    'categorical', ARRAY['mart.order_summary', 'mart.v_sales_item']),
+    ('seller_state',   'Штат продавца',     'seller_state',    'categorical', ARRAY['mart.v_sales_item']),
+    ('seller_id',      'Продавец',          'seller_id',       'categorical', ARRAY['mart.v_sales_item']),
+    ('category',       'Категория товара',  'category_label',  'categorical', ARRAY['mart.v_sales_item']);
+
+COMMENT ON TABLE mart.dimension_catalog IS 'Каталог срезов: код, колонка и представления, где срез применим';
+-- <<< sql/60_mart/655_dimension_catalog.sql
+
+-- >>> sql/60_mart/660_ops_views.sql
+-- object : mart.build_params, mart.etl_runs, mart.stream_status, mart.reconcile_result
+-- grain  : как у одноимённых таблиц ops.*
+-- source : ops.build_params, ops.etl_runs, ops.stream_status, ops.reconcile_result
+-- cc     : K0 §3.2, §4.3
+-- why    : API и Grafana читают только mart под app_ro; тонкие views дают доступ к служебным данным без прав на ops
+
+CREATE VIEW mart.build_params AS SELECT * FROM ops.build_params;
+CREATE VIEW mart.etl_runs AS SELECT * FROM ops.etl_runs;
+CREATE VIEW mart.stream_status AS SELECT * FROM ops.stream_status;
+CREATE VIEW mart.reconcile_result AS SELECT * FROM ops.reconcile_result;
+-- <<< sql/60_mart/660_ops_views.sql
 
 -- >>> sql/70_answers/700_answers_q01_q05.sql
 -- object : mart.q01..q05 — ответы на вопросы аналитиков (docs/tasks.md, блок А)
@@ -765,5 +1086,33 @@ BEGIN
     END IF;
 END $$;
 -- <<< sql/80_dq/890_dq_run.sql
+
+-- >>> sql/90_grants/900_grants.sql
+-- object : гранты ролей app_ro и ingestor
+-- grain  : -
+-- source : -
+-- cc     : NFR (разграничение доступа), K0 §3.3, §4.4
+-- why    : схемы stg/core/mart пересоздаются на каждой сборке и теряют GRANT, поэтому гранты
+--          выдаются в последнем файле бандла; GRANT идемпотентен
+
+-- app_ro: только чтение mart (core, raw, landing, ops недоступны)
+GRANT USAGE ON SCHEMA mart TO app_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA mart TO app_ro;
+
+-- ingestor: запись событий в landing и применение их в core
+GRANT USAGE, CREATE ON SCHEMA landing TO ingestor;
+GRANT ALL ON ALL TABLES IN SCHEMA landing TO ingestor;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA landing TO ingestor;
+
+GRANT USAGE ON SCHEMA core TO ingestor;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA core TO ingestor;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA core TO ingestor;
+
+-- ingestor: статус потока и параметры сборки
+-- SELECT на stream_status нужен для UPDATE ... WHERE id = 1
+GRANT USAGE ON SCHEMA ops TO ingestor;
+GRANT SELECT, UPDATE ON ops.stream_status TO ingestor;
+GRANT SELECT ON ops.build_params TO ingestor;
+-- <<< sql/90_grants/900_grants.sql
 
 COMMIT;

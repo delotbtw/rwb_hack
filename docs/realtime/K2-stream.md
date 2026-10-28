@@ -1,5 +1,5 @@
 # K2. Поток: генератор, Redpanda, ingestor
-*Спека v1, 2026-10-28. Опора: `K0-contracts.md` (§2-§4), `realtime-plan.md` (§1.1, §2, §4, §5.5), `CLAUDE.md`. Предположения: `ASSUMPTION-K2-n`.*
+*Спека v1, 2026-10-28. Опора: `K0-contracts.md` (§2-§4), `realtime-plan.md` (§1.1, §2, §4, §5.5). Предположения: `ASSUMPTION-K2-n`.*
 
 ## 1. Цель и границы
 Проиграть Olist потоком в Redpanda и идемпотентно применить в `core`: «история до cutoff (K3) + хвост» даёт Q1-Q5 = контрольным (`docs/tasks.md`). Входит: `stream/generator`, `stream/ingestor`, `stream/broker_reset.py`, `docker-compose.realtime.yml`, `make/stream.mk` (`live|demo-replay|stream-reset`), правки `sql/` под upsert. НЕ входит: фильтр cutoff, `demo-prep|reset`, Airflow (K3); API, «Контроль» (K1); Grafana (K4); правка `Makefile` (только оркестратор).

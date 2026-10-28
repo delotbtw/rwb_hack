@@ -46,7 +46,7 @@ ASSUMPTION-1: Python 3.12, pytest 8.x, psycopg2-binary 2.9.x, sqlfluff 3.x, stre
 
 ```
 hack/
-├── CLAUDE.md  README.md (кейса + «Сборка модели»)  .env.example  .gitignore
+├── README.md  .env.example  .gitignore
 │
 ├── [БД]  docker-compose.yml                 из кейса, НЕ менять
 │         scripts/setup.sh, download_data.sh, load_raw.py, init/*.sql   из кейса, НЕ менять
@@ -78,7 +78,7 @@ hack/
 │         answers/answers.md, docs/data_dictionary.md
 │
 └── [общее] docs/architecture.md, strategy.md (DL-5), ai_usage.md (DL-6, журнал по checkpoint);
-            входы TZ.md, tz/, handout.md, tasks.md, profiling/ — не менять; hack.ipynb — вне пайплайна
+            входы TZ.md, tz/, handout.md, tasks.md, profiling/ — не менять
 ```
 
 Шапка каждого SQL-файла (NFR-04, проверяет `test_static.py`):

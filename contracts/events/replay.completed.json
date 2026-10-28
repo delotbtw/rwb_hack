@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/replay.completed.json",
+  "title": "replay.completed payload",
+  "type": "object",
+  "properties": {
+    "replay_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cutoff": {
+      "oneOf": [
+        {
+          "$ref": "envelope.json#/$defs/date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "events_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "orders_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "orders_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revenue": {
+          "$ref": "envelope.json#/$defs/money"
+        },
+        "avg_check": {
+          "$ref": "envelope.json#/$defs/money"
+        },
+        "customers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repeat_pct": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d{2}$"
+        }
+      },
+      "required": [
+        "orders_total",
+        "revenue",
+        "avg_check",
+        "customers",
+        "repeat_pct"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "replay_id",
+    "cutoff",
+    "events_total",
+    "orders_total",
+    "expected"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+{
+  "failed_at": "2026-10-28T09:15:02Z",
+  "reason_code": "schema_violation",
+  "reason_detail": "$.payload.review_score: 6 is greater than the maximum of 5",
+  "source": {
+    "topic": "orders.events",
+    "partition": 1,
+    "offset": 4821
+  },
+  "event_id": "156727da-380e-579d-9391-7ab17c9d9cf9",
+  "original": "{\"type\": \"review.posted\"}"
+}

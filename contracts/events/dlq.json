@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/dlq.json",
+  "title": "orders.dlq message (key = key of the original message)",
+  "type": "object",
+  "properties": {
+    "failed_at": {
+      "$ref": "envelope.json#/$defs/timestamp_utc"
+    },
+    "reason_code": {
+      "enum": [
+        "invalid_json",
+        "schema_violation",
+        "unknown_type",
+        "unsupported_version",
+        "apply_error"
+      ]
+    },
+    "reason_detail": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "minLength": 1
+        },
+        "partition": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "topic",
+        "partition",
+        "offset"
+      ],
+      "additionalProperties": false
+    },
+    "event_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "May be unparseable, so not restricted to uuid."
+    },
+    "original": {
+      "type": "string",
+      "description": "Original message body as received."
+    }
+  },
+  "required": [
+    "failed_at",
+    "reason_code",
+    "reason_detail",
+    "source",
+    "event_id",
+    "original"
+  ],
+  "additionalProperties": false
+}

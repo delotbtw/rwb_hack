@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/order.status_changed.json",
+  "title": "order.status_changed payload",
+  "type": "object",
+  "properties": {
+    "order_status": {
+      "enum": [
+        "delivered",
+        "shipped",
+        "canceled",
+        "unavailable",
+        "invoiced",
+        "processing",
+        "approved",
+        "unknown"
+      ]
+    },
+    "approved_at": {
+      "oneOf": [
+        {
+          "$ref": "envelope.json#/$defs/timestamp_naive"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "delivered_carrier_at": {
+      "oneOf": [
+        {
+          "$ref": "envelope.json#/$defs/timestamp_naive"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "delivered_customer_at": {
+      "oneOf": [
+        {
+          "$ref": "envelope.json#/$defs/timestamp_naive"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "order_status"
+  ],
+  "additionalProperties": false
+}

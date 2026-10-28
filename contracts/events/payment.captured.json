@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/payment.captured.json",
+  "title": "payment.captured payload",
+  "type": "object",
+  "properties": {
+    "payment_sequential": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payment_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payment_installments": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payment_value": {
+      "$ref": "envelope.json#/$defs/money"
+    }
+  },
+  "required": [
+    "payment_sequential",
+    "payment_type",
+    "payment_installments",
+    "payment_value"
+  ],
+  "additionalProperties": false
+}

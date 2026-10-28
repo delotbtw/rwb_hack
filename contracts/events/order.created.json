@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/order.created.json",
+  "title": "order.created payload",
+  "type": "object",
+  "properties": {
+    "order": {
+      "type": "object",
+      "properties": {
+        "order_id": {
+          "$ref": "envelope.json#/$defs/order_id"
+        },
+        "customer_id": {
+          "$ref": "envelope.json#/$defs/order_id"
+        },
+        "order_status": {
+          "enum": [
+            "delivered",
+            "shipped",
+            "canceled",
+            "unavailable",
+            "invoiced",
+            "processing",
+            "created",
+            "approved",
+            "unknown"
+          ]
+        },
+        "purchased_at": {
+          "$ref": "envelope.json#/$defs/timestamp_naive"
+        },
+        "estimated_delivery_at": {
+          "oneOf": [
+            {
+              "$ref": "envelope.json#/$defs/timestamp_naive"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "order_id",
+        "customer_id",
+        "order_status",
+        "purchased_at"
+      ],
+      "additionalProperties": false
+    },
+    "customer": {
+      "type": "object",
+      "properties": {
+        "customer_id": {
+          "$ref": "envelope.json#/$defs/order_id"
+        },
+        "customer_unique_id": {
+          "$ref": "envelope.json#/$defs/order_id"
+        },
+        "zip_prefix": {
+          "type": "string"
+        },
+        "city": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "customer_id",
+        "customer_unique_id",
+        "zip_prefix",
+        "city",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "items": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "product_id": {
+            "$ref": "envelope.json#/$defs/order_id"
+          },
+          "seller_id": {
+            "$ref": "envelope.json#/$defs/order_id"
+          },
+          "shipping_limit_at": {
+            "oneOf": [
+              {
+                "$ref": "envelope.json#/$defs/timestamp_naive"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price": {
+            "$ref": "envelope.json#/$defs/money"
+          },
+          "freight_value": {
+            "$ref": "envelope.json#/$defs/money"
+          }
+        },
+        "required": [
+          "order_item_id",
+          "product_id",
+          "seller_id",
+          "price",
+          "freight_value"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "order",
+    "customer",
+    "items"
+  ],
+  "additionalProperties": false
+}

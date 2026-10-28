@@ -1,0 +1,6 @@
+{
+  "type": "bar",
+  "metric": "revenue",
+  "x": "month",
+  "color": "red"
+}

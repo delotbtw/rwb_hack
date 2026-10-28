@@ -1,0 +1,35 @@
+{
+  "event_id": "b18cca3a-a4cd-5fce-9e7e-b80b04e1b5d6",
+  "type": "order.created",
+  "order_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "event_ts": "2017-10-02T10:56:33",
+  "produced_at": "2026-10-28T09:15:00Z",
+  "schema_version": 1,
+  "payload": {
+    "order": {
+      "order_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "customer_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "order_status": "delivered",
+      "purchased_at": "2017-10-02T10:56:33",
+      "estimated_delivery_at": "2017-10-18T00:00:00",
+      "coupon": "X"
+    },
+    "customer": {
+      "customer_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "customer_unique_id": "ffeeddccbbaa99887766554433221100",
+      "zip_prefix": "03149",
+      "city": "sao paulo",
+      "state": "SP"
+    },
+    "items": [
+      {
+        "order_item_id": 1,
+        "product_id": "11112222333344445555666677778888",
+        "seller_id": "99990000aaaabbbbccccddddeeeeffff",
+        "shipping_limit_at": "2017-10-06T11:07:15",
+        "price": "29.99",
+        "freight_value": "8.72"
+      }
+    ]
+  }
+}

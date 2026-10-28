@@ -1,0 +1,12 @@
+{
+  "failed_at": "2026-10-28T09:15:02Z",
+  "reason_code": "oops",
+  "reason_detail": "x",
+  "source": {
+    "topic": "orders.events",
+    "partition": 1,
+    "offset": 4821
+  },
+  "event_id": null,
+  "original": "{"
+}

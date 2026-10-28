@@ -1,0 +1,21 @@
+{
+  "event_id": "186a4bb8-2d3d-5516-9ed9-92e94f999464",
+  "type": "replay.completed",
+  "order_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "event_ts": "2018-10-17T17:30:18",
+  "produced_at": "2026-10-28T09:15:00Z",
+  "schema_version": 1,
+  "payload": {
+    "replay_id": "full-2026-10-28",
+    "cutoff": null,
+    "events_total": 550000,
+    "orders_total": 99441,
+    "expected": {
+      "orders_total": 99441,
+      "revenue": "13221498.11",
+      "avg_check": "159.88",
+      "customers": 96096,
+      "repeat_pct": "3.12"
+    }
+  }
+}

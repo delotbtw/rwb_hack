@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capibara.local/contracts/events/envelope.json",
+  "title": "orders.events envelope (key = order_id, for replay.completed = 'replay')",
+  "type": "object",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "order_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "timestamp_naive": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$",
+      "description": "Business time, naive, no zone."
+    },
+    "timestamp_utc": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$",
+      "description": "UTC, ends with Z."
+    },
+    "money": {
+      "type": "string",
+      "pattern": "^-?\\d+\\.\\d{2}$",
+      "description": "Decimal string with 2 digits, never float."
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "properties": {
+    "event_id": {
+      "$ref": "#/$defs/uuid",
+      "description": "uuid5 of 'type:order_id:discriminator'; replay gives the same id."
+    },
+    "type": {
+      "enum": [
+        "order.created",
+        "payment.captured",
+        "order.status_changed",
+        "review.posted",
+        "replay.completed"
+      ]
+    },
+    "order_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "event_ts": {
+      "$ref": "#/$defs/timestamp_naive"
+    },
+    "produced_at": {
+      "$ref": "#/$defs/timestamp_utc"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "event_id",
+    "type",
+    "order_id",
+    "event_ts",
+    "produced_at",
+    "schema_version",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "order.created"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "order.created.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "payment.captured"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "payment.captured.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "order.status_changed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "order.status_changed.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "review.posted"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "review.posted.json"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "replay.completed"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "order_id": {
+            "type": "null"
+          },
+          "payload": {
+            "$ref": "replay.completed.json"
+          }
+        }
+      }
+    }
+  ]
+}

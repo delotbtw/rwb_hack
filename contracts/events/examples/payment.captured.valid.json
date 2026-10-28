@@ -1,0 +1,14 @@
+{
+  "event_id": "36f7a621-e389-5ddb-97e6-aa633356b798",
+  "type": "payment.captured",
+  "order_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "event_ts": "2017-10-02T10:56:34",
+  "produced_at": "2026-10-28T09:15:00Z",
+  "schema_version": 1,
+  "payload": {
+    "payment_sequential": 1,
+    "payment_type": "credit_card",
+    "payment_installments": 1,
+    "payment_value": "38.71"
+  }
+}

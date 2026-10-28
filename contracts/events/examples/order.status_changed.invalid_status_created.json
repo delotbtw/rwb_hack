@@ -1,0 +1,14 @@
+{
+  "event_id": "15e22fb2-dfbe-5f87-9f18-b5bff213895a",
+  "type": "order.status_changed",
+  "order_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "event_ts": "2017-10-10T21:25:13",
+  "produced_at": "2026-10-28T09:15:00Z",
+  "schema_version": 1,
+  "payload": {
+    "order_status": "created",
+    "approved_at": "2017-10-02T11:07:15",
+    "delivered_carrier_at": "2017-10-04T19:55:00",
+    "delivered_customer_at": "2017-10-10T21:25:13"
+  }
+}

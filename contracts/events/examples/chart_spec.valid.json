@@ -1,0 +1,20 @@
+{
+  "type": "bar",
+  "metric": "revenue",
+  "x": "category",
+  "series": "customer_state",
+  "filters": {
+    "order_status": [
+      "delivered"
+    ],
+    "customer_state": [
+      "SP",
+      "RJ"
+    ]
+  },
+  "date_from": "2017-01-01",
+  "date_to": "2017-12-31",
+  "top_n": 10,
+  "sort": "desc",
+  "title": "Revenue by category and state, 2017"
+}

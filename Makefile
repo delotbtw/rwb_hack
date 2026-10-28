@@ -40,3 +40,6 @@ down:  ## остановить всё (данные сохраняются)
 reset:  ## снести базу с данными и собрать всё заново
 	$(COMPOSE) down -v
 	$(MAKE) demo
+
+# Цели модулей real-time (K2 stream.mk, K3 batch.mk, K4 bi.mk) — каждый модуль ведёт свой файл
+-include make/*.mk

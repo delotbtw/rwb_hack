@@ -1,0 +1,106 @@
+# Надстройка над docker-compose.yml и docker-compose.app.yml (их не меняем). Профиль `airflow`:
+#   docker compose -f docker-compose.yml -f docker-compose.app.yml -f docker-compose.airflow.yml --profile airflow up -d --build
+# Проще: make airflow. UI: http://localhost:8082 (admin/admin, только локально).
+# Порядок: postgres (healthy) → airflow-init (БД `airflow`, миграции, admin; завершается) → scheduler + webserver.
+# Порт 8082: 8080 занят pgAdmin, 8089 — Redpanda Console (K2), 3000 — Grafana (K4).
+
+x-airflow-env: &airflow-env
+  # Метаданные Airflow — отдельная БД `airflow` в том же Postgres (создаёт airflow-init).
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://hack:hack@postgres:5432/airflow
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  # DAG стартует на паузе: при catchup=True включение сразу запустило бы сборки за все прошлые дни.
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+  AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"
+  # Общий ключ: иначе scheduler и webserver подписывают запросы к логам разными ключами (403). Локальный, не секрет.
+  AIRFLOW__WEBSERVER__SECRET_KEY: capibara-local-dev-only
+  # pipeline/ и корень репозитория видны задачам как в сервисе etl.
+  PYTHONPATH: /work
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: marketplace
+  PGUSER: hack
+  PGPASSWORD: hack
+  DQ_MODE: ${DQ_MODE:-strict}
+  FORCE_RAW: ${FORCE_RAW:-0}
+
+x-airflow: &airflow
+  build:
+    context: .
+    dockerfile: docker/airflow.Dockerfile
+  image: capibara-airflow:2.11
+  working_dir: /work
+  # UID 50000 из образа; на Linux при проблемах с правами на ./output задайте AIRFLOW_UID=$(id -u).
+  user: "${AIRFLOW_UID:-50000}:0"
+  profiles: ["airflow"]
+  environment: *airflow-env
+  volumes:
+    - ./:/work
+    # Каталог DAG (файлы пишет K3-T4): отдельная точка монтирования, где Airflow ищет DAG по умолчанию.
+    - ./airflow/dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+
+services:
+  airflow-init:
+    <<: *airflow
+    container_name: hack_airflow_init
+    # Идемпотентно: повторный запуск не ломает ни БД, ни пользователя.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        python - <<'PY'
+        import psycopg2
+        conn = psycopg2.connect(host="postgres", dbname="marketplace", user="hack", password="hack")
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = 'airflow'")
+        if cur.fetchone() is None:
+            cur.execute("CREATE DATABASE airflow")
+        PY
+        airflow db migrate
+        airflow users create --role Admin --username "$${AIRFLOW_ADMIN_USER}" --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname Capibara --lastname Admin --email admin@local.dev || true
+    environment:
+      <<: *airflow-env
+      AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-scheduler:
+    <<: *airflow
+    container_name: hack_airflow_scheduler
+    command: ["scheduler"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$(hostname)\""]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-webserver:
+    <<: *airflow
+    container_name: hack_airflow_web
+    command: ["webserver"]
+    ports:
+      - "8082:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow_logs:

@@ -2,6 +2,7 @@
 -- grain  : 1 строка = 1 связь отзыва с заказом; ключ (review_id, order_id)
 -- source : raw.order_reviews
 -- cc     : review_id не уникален сам по себе, у 547 заказов несколько отзывов — DISTINCT не делаем
+--          cutoff: при заданном cutoff только позиции заказов из stg.orders (K3 §3.1)
 -- why    : оценка в int, пустой текст отзыва — NULL, а не пустая строка
 
 CREATE VIEW stg.order_reviews AS
@@ -13,4 +14,6 @@ SELECT
     NULLIF(TRIM(review_comment_message), '')              AS review_comment_message,
     NULLIF(TRIM(review_creation_date), '')::timestamp     AS review_created_at,
     NULLIF(TRIM(review_answer_timestamp), '')::timestamp  AS review_answered_at
-FROM raw.order_reviews;
+FROM raw.order_reviews AS r
+WHERE (SELECT cutoff FROM ops.build_params WHERE id = 1) IS NULL
+   OR EXISTS (SELECT 1 FROM stg.orders AS o WHERE o.order_id = NULLIF(TRIM(r.order_id), ''));

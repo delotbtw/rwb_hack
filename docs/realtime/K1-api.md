@@ -29,14 +29,14 @@ Read-only слой над `mart.*` для Streamlit, агента (K6) и CSV. �
 6. `with_total=true` только при `additivity='additive'`, иначе `non_additive_rollup`. Итог — отдельный запрос без `group_by` с теми же фильтрами, не сумма строк; итог неаддитивной метрики клиент берёт запросом с `group_by=[]`.
 7. Decimal→number, даты ISO. `explain.sql` — текст с `%s`, `explain.params` — bind-значения.
 
-**GET /api/status** → `{server_time, stream{mart.stream_status}, last_batch{последняя mart.etl_runs kind='batch'}, last_published{status='published'}, dq{passed,total,failed[]}, reconcile{run_id,ok,items[≤50, is_ok=false первыми]}}`. Нет данных → секция `null`, пустой поток → нули. `dq.passed/total` = `dq_passed/dq_total` последнего batch; `failed` из `dq_result` (`ASSUMPTION K1-3`: читается `app_ro`, колонки — `sql/80_dq/800_dq_framework.sql`; иначе `[]`).
+**GET /api/status** → `{server_time, stream{mart.stream_status}, last_batch{последняя mart.etl_runs kind='batch'}, last_published{status='published'}, dq{passed,total,failed[]}, reconcile{run_id,ok,items[≤50, is_ok=false первыми]}, last_replay{последняя mart.replay_runs по received_at: replay_id,cutoff,events_total,orders_total,expected,received_at,caught_up_at}}`. Нет данных → секция `null`, пустой поток → нули. `dq.passed/total` = `dq_passed/dq_total` последнего batch; `failed` из `mart.dq_result WHERE NOT passed` (`check_id, description, expected, actual`; таблица в `mart`, `app_ro` читает по `900_grants.sql`). В `reconcile.items` `batch_value`/`stream_value` могут быть `null`. `last_replay` — источник страницы «Контроль» (сверка модели с `expected` после `caught_up_at`), зависит от K2 (§6).
 
 **GET /api/export.csv**: `metric`, `group_by` (повтор), `filters` (JSON-строка), `date_from/date_to`, `grain`, `sort`, `limit` (1..50000, 10000). Конвейер и ошибки (JSON) как у `/api/query`. Ответ `text/csv; charset=utf-8`, заголовок = `columns`, `Content-Disposition: attachment; filename="{metric}.csv"`, `X-Truncated: true|false`. Строка, начинающаяся с `= + - @`, получает префикс `'`.
 
 ## 3. Сборка SQL и безопасность
 1. В текст SQL попадает только каталожное: `formula_sql`, `source_view`, `column_name`. Всё от клиента — ключ словаря каталога или bind.
 2. Идентификаторы — `psycopg2.sql.Identifier`; `source_view` ~ `^mart\.[a-z_]+$`, `column_name` ~ `^[a-z_][a-z0-9_]*$`, иначе 500.
-3. `grain`/`sort` — фиксированные словари (`date_trunc('day'|'week')`, `ASC|DESC`), `limit` — bind int. Время для `day/week` и `date_*`: `TIME_COLUMN = {source_view: 'purchase_ts'}` (`ASSUMPTION K1-4`); при `month` — `column_name` среза.
+3. `grain`/`sort` — фиксированные словари (`date_trunc('day'|'week')`, `ASC|DESC`), `limit` — bind int. Время для `day/week` и `date_*`: `TIME_COLUMN = {'mart.v_sales_item': 'purchase_ts', 'mart.order_summary': 'purchased_at'}` (в `order_summary` колонка называется `purchased_at`; `mart.v_kpi` времени не имеет, `allowed_dims=[]`); при `month` — `column_name` среза.
 4. Фильтр: `{column}::text = ANY(%s)`, числа → `str`, `month` = `YYYY-MM-01`; значение ≤100 символов.
 5. Срез допустим, если он в `dimension_catalog` и в `allowed_dims` метрики (`filters` и `group_by` одинаково).
 6. Алиасы — `Identifier(dim_code|metric_code)`; конкатенации ввода нет, включая `ORDER BY`/`LIMIT`. Запись и доступ вне `mart` закрыты ролью (K0 §4.4).
@@ -55,12 +55,12 @@ Read-only слой над `mart.*` для Streamlit, агента (K6) и CSV. �
 | A-8 | `limit:3` по `seller_id` → 3 строки, `truncated=true`; `limit` ≥ групп → `false` | R |
 | A-9 | Фильтр `"SP'; DROP TABLE x;--"` → 200, пусто; значения в `explain.sql` нет | R |
 | A-10 | `/api/metrics` → 20 метрик, 6 срезов, у метрик `formula_sql`, `allowed_dims` | R |
-| A-11 | `/api/status` при пустых `ops.*` → 200, `null`/нули; с данными `stream` = `mart.stream_status` | R |
+| A-11 | `/api/status` при пустых `ops.*` → 200, `null`/нули; с данными `stream` = `mart.stream_status`; нет `mart.replay_runs` или пуста → `last_replay=null` | R |
 | A-12 | `/api/export.csv?metric=revenue&group_by=customer_state` → `text/csv`, заголовок `customer_state,revenue`, `X-Truncated: false`; ячейка `=cmd` → `'=cmd`; неизвестная метрика → 422 JSON | R |
 | A-13 | Роль `app_ro`, `SHOW statement_timeout`=5s; запрос >5 с → 504 `query_timeout`; ошибки без SQL и текста исключения | R |
 
 ## 5. Задачи
-Коммиты по K0 §2. Тесты — только A-1, A-2 в `tests/api/test_query.py`, без TDD; нет БД или `app_ro` → `skip`.
+Коммиты: сообщение без строки `Co-Authored-By` и без упоминаний Claude/ИИ. Тесты — только A-1, A-2 в `tests/api/test_query.py`, без TDD; нет БД или `app_ro` → `skip`.
 | № | Задача | Файлы | Образец | Исполнитель | Волна |
 |---|---|---|---|---|---|
 | T1 | pydantic-модели, `ApiError`, handlers | `app/api/schemas.py`, `errors.py` | K0 §5 | python-developer | 1 |
@@ -72,14 +72,18 @@ Read-only слой над `mart.*` для Streamlit, агента (K6) и CSV. �
 T1–T5 standard: роль БД, инъекции, CSV-injection, образца нет. T6 lite: по образцу, ≤3 файла. Задачи одной волны параллельны. После T6: `code-reviewer` + `security-engineer` параллельно.
 
 ## 6. Зависимость от K0 (для сверки)
-- `mart.metric_catalog`: `metric_code, name, description, formula_sql, source_view, grain, additivity, is_additive, unit, allowed_dims, note`; 20 строк.
+- `mart.metric_catalog`: `metric_code, name, description, formula_sql, source_view, grain, additivity (additive|semi|non), is_additive, unit, allowed_dims, note`; 20 строк.
 - `mart.dimension_catalog`: `dim_code, name, column_name, dim_type, source_views`; коды `month, customer_state, order_status, seller_state, seller_id, category`.
-- Источники: `mart.v_sales_item` (`purchase_ts, purchase_month`), `mart.order_summary`, `mart.v_kpi`. `purchase_ts` в `order_summary` в K0 не назван (K1-4): сверить.
+- Источники: `mart.v_sales_item` (`purchase_ts, purchase_month`), `mart.order_summary` (`purchased_at, purchase_month`; `purchase_ts` там нет), `mart.v_kpi` (без времени).
 - `mart.stream_status`: `last_event_ts, events_total, events_per_sec, lag_events, lag_sec, dlq_count, updated_at`.
 - `mart.etl_runs`: `run_id, ds, kind, status, started_at, finished_at, dq_passed, dq_total, reconcile_diff, cutoff, note`.
-- `mart.reconcile_result`: `run_id, ds, day, check_code, batch_value, stream_value, diff, is_ok, checked_at`.
-- Роль `app_ro`: пароль = имя, `SELECT` на `mart`, `statement_timeout=5s`, read-only. `dq_result` вне K0 (K1-3).
+- `mart.reconcile_result`: `run_id, ds, day, check_code, batch_value, stream_value, diff, is_ok, checked_at`; `day`, `batch_value`, `stream_value` nullable (`055_ops_tables.sql`).
+- Роль `app_ro`: пароль = имя, `SELECT` на `mart`, `statement_timeout=5s`, read-only. `mart.dq_result(check_id, description, expected, actual, passed, checked_at)` — `sql/80_dq/800_dq_framework.sql`, читается `app_ro`.
 - Эталон: revenue без фильтров = 13221498.11.
 
+## 6.1 Зависимость от K2
+- `mart.replay_runs` (`sql/60_mart/665_replay_view.sql` над `ops.replay_runs`, `sql/05_landing/057_replay_runs.sql`) — для `last_replay` и страницы «Контроль». До слияния K2 `last_replay=null` (view нет → секция `null`, не 500).
+- Факт K2: `mart.v_sales_month`, `order_summary`, `v_seller_sales`, `v_category_sales` (600–620) становятся обычными `VIEW` (данные потока видны сразу). Запросы K1 идут к обычным view; если медленно (>5 с `statement_timeout`) — запасной `ops.refresh_marts()`, решение пользователя.
+
 ## 7. Решения по умолчанию
-`grain`, `sort`, `with_total`, `total`, `invalid_request` расширяют K0 §5 — согласовать с K6. Колонка `month` содержит дату начала периода и при `day/week`.
+`grain`, `sort`, `with_total`, `total`, `invalid_request`, `last_replay` расширяют K0 §5 — согласовать с K6. Колонка `month` содержит дату начала периода и при `day/week`.

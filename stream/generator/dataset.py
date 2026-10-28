@@ -63,7 +63,7 @@ class Replay:
 
 
 def _clean(value: str | None) -> str | None:
-    return (value or "").strip() or None
+    return (value or "").strip(" ") or None
 
 
 def _ts(value: str | None) -> datetime | None:
